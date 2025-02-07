@@ -395,7 +395,8 @@ def show_loading_screen(progress, total):
 
 
 def load_all_assets():
-    total_load_steps = 704  # 500 + 41 + 41 + 55 + 47 = 500 + 184 = 684; здесь значение может быть скорректировано по вашим нуждам
+    # Общее число шагов загрузки (значение можно откорректировать)
+    total_load_steps = 704
     current_progress = 0
     show_loading_screen(current_progress, total_load_steps)
 
@@ -431,7 +432,7 @@ def load_all_assets():
     current_progress += 60
     show_loading_screen(current_progress, total_load_steps)
 
-    # Увеличиваем размер пули в 2 раза: вместо 45x45 используем 90x90
+    # Увеличенные анимации пуль (90x90)
     ton_bullet = load_bullet_animation("ton coin", 155, "ton coin", 90, 90, GRAY)
     current_progress += 155
     show_loading_screen(current_progress, total_load_steps)
@@ -448,8 +449,8 @@ def load_all_assets():
     current_progress += 1
     show_loading_screen(current_progress, total_load_steps)
 
-    start_button_video = cv2.VideoCapture("start game.mov")
-    current_progress += 1
+    start_game_anim = create_pepe_animation("start game", 65, "start game", 300, 100)
+    current_progress += 65
     show_loading_screen(current_progress, total_load_steps)
 
     ai_image = load_image_with_fallback("AI_name.png", 300, 300, GRAY)
@@ -465,7 +466,7 @@ def load_all_assets():
     current_progress += 41
     show_loading_screen(current_progress, total_load_steps)
 
-    # Новое: загрузка matrix-анимаций
+    # Загрузка matrix-анимаций
     matrix_durov = create_pepe_animation(
         "matrix_durov", 55, "Holomatrix Durov", 350, 350
     )
@@ -495,7 +496,7 @@ def load_all_assets():
         },
         "video": main_video,
         "video_lobby": lobby_video,
-        "video_start": start_button_video,
+        "start_game_anim": start_game_anim,
         "ai_image": ai_image,
         "left_glow": left_glow,
         "right_glow": right_glow,
@@ -554,34 +555,6 @@ class AIPlayerLocal(Player):
         pass
 
 
-def load_image_with_fallback(path, width, height, fallback_color):
-    try:
-        image = pygame.image.load(path).convert_alpha()
-    except:
-        image = pygame.Surface((width, height))
-        image.fill(fallback_color)
-    return pygame.transform.scale(image, (width, height))
-
-
-def load_animation(folder, frame_count, prefix, width=350, height=350):
-    frames = []
-    for i in range(frame_count):
-        path = f"{folder}/{prefix}_{i+1}.png"
-        frame_surf = load_image_with_fallback(path, width, height, ORANGE)
-        frames.append(frame_surf)
-    return frames
-
-
-def create_pepe_animation(folder, frame_count, prefix, width=300, height=300):
-    frames = []
-    for i in range(frame_count):
-        frame_number = str(i).zfill(5)
-        path = f"{folder}/{prefix}_{frame_number}.png"
-        frame_surf = load_image_with_fallback(path, width, height, BLUE)
-        frames.append(frame_surf)
-    return frames
-
-
 def main_game(player1_choice, player2_choice, assets):
     # Игра проходит в раундах до 2 побед одного из игроков.
     score1 = 0
@@ -610,7 +583,7 @@ def main_game(player1_choice, player2_choice, assets):
             frame = cv2.resize(frame, (SCREEN_WIDTH, SCREEN_HEIGHT))
             return pygame.surfarray.make_surface(np.transpose(frame, (1, 0, 2)))
 
-        # Определяем контролы (как в исходном коде)
+        # Определяем контролы
         player1_controls = {
             "left": K_a,
             "right": K_d,
@@ -727,9 +700,7 @@ def main_game(player1_choice, player2_choice, assets):
         running_round = True
 
         while running_round:
-            video_surface = get_frame_surface(
-                assets["video"], SCREEN_WIDTH, SCREEN_HEIGHT
-            )
+            video_surface = get_video_frame_surface()
             if video_surface:
                 screen.blit(video_surface, (0, 0))
             else:
@@ -851,7 +822,7 @@ def main_game(player1_choice, player2_choice, assets):
 
 
 def main_menu(assets):
-    # Загрузка glow-анимаций (если ещё не загружены)
+
     if "left_glow" not in assets:
         assets["left_glow"] = create_pepe_animation(
             "свечение_левое", 41, "Left glow", 1920, 1080
@@ -860,7 +831,6 @@ def main_menu(assets):
         assets["right_glow"] = create_pepe_animation(
             "свечение_правое", 41, "Right glow", 1920, 1080
         )
-    # Загрузка matrix-анимаций с размером 350x350
     if "matrix_durov" not in assets:
         assets["matrix_durov"] = create_pepe_animation(
             "matrix_durov", 55, "Holomatrix Durov", 350, 350
@@ -871,24 +841,20 @@ def main_menu(assets):
         )
 
     cap_lobby = assets["video_lobby"]
-    cap_start = assets["video_start"]
-    # Удаляем использование cap_durov_idle и cap_pepe_idle полностью
     ai_image = assets["ai_image"]
 
-    # Сброс позиций фоновых видео при входе в главное меню
     cap_lobby.set(cv2.CAP_PROP_POS_FRAMES, 0)
-    cap_start.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
-    # Таймеры для glow-анимаций
     left_glow_time = 0
     right_glow_time = 0
     glow_duration = 1.0  # секунд
     left_glow_frames = assets["left_glow"]
     right_glow_frames = assets["right_glow"]
 
-    # Таймеры для matrix-анимаций – они будут отображаться до смены выбора
-    left_matrix_time = time.time()  # сразу при запуске
+    left_matrix_time = time.time()
     right_matrix_time = time.time()
+
+    start_game_anim_start = time.time()
 
     font = pygame.font.SysFont(None, 74)
     font_label = pygame.font.SysFont(None, 36)
@@ -915,20 +881,12 @@ def main_menu(assets):
         if not cap_lobby.isOpened():
             assets["video_lobby"] = cv2.VideoCapture("лобби.mp4")
             cap_lobby = assets["video_lobby"]
-        if not cap_start.isOpened():
-            assets["video_start"] = cv2.VideoCapture("start game.mov")
-            cap_start = assets["video_start"]
 
-        # Фоновые видео
         lobby_surf = get_frame_surface(cap_lobby, SCREEN_WIDTH, SCREEN_HEIGHT)
         if lobby_surf:
             screen.blit(lobby_surf, (0, 0))
         else:
             screen.fill(WHITE)
-
-        title = font.render("Choose Characters", True, BLACK)
-        title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, 100))
-        screen.blit(title, title_rect)
 
         p1_label = font_label.render("Player 1", True, BLUE)
         screen.blit(p1_label, (50, 150))
@@ -945,7 +903,6 @@ def main_menu(assets):
         p1_text_rect = p1_choice_surf.get_rect(center=p1_label_rect.center)
         screen.blit(p1_choice_surf, p1_text_rect)
 
-        # Превью для Player 1 – теперь размер 350x350
         preview_rect1 = pygame.Rect(300, 600, 350, 350)
         if options[player1_index] == "ai":
             ai_img_scaled = pygame.transform.scale(
@@ -953,12 +910,10 @@ def main_menu(assets):
             )
             screen.blit(ai_img_scaled, preview_rect1.topleft)
         else:
-            # Используем matrix-анимацию для персонажей
             if options[player1_index] == "durov":
                 matrix_frames = assets["matrix_durov"]
             else:
                 matrix_frames = assets["matrix_pepe"]
-            # Отображаем текущий кадр matrix-анимации, масштабированный до превью
             frame_index = int(
                 ((time.time() - left_matrix_time) * 10) % len(matrix_frames)
             )
@@ -967,7 +922,6 @@ def main_menu(assets):
             )
             screen.blit(scaled_matrix, preview_rect1.topleft)
 
-        # Отрисовка glow-анимации для левого превью (растягивается на весь экран)
         current_time = time.time()
         if current_time - left_glow_time < glow_duration:
             frame_index = int(
@@ -1011,7 +965,6 @@ def main_menu(assets):
             )
             screen.blit(scaled_matrix, preview_rect2.topleft)
 
-        # Отрисовка glow-анимации для правого превью (растягивается на весь экран)
         if current_time - right_glow_time < glow_duration:
             frame_index = int(
                 ((current_time - right_glow_time) / glow_duration)
@@ -1025,20 +978,20 @@ def main_menu(assets):
             )
             screen.blit(scaled_glow, (0, 0))
 
-        start_button.draw(screen)
         shop_button.draw(screen)
 
-        start_anim_surf = get_frame_surface(
-            cap_start, start_button.rect.width, start_button.rect.height
+        start_game_frames = assets["start_game_anim"]
+        anim_elapsed = time.time() - start_game_anim_start
+        anim_frame_index = int(anim_elapsed * 10) % len(start_game_frames)
+        anim_frame = start_game_frames[anim_frame_index]
+        scaled_anim_frame = pygame.transform.scale(
+            anim_frame, (start_button.rect.width, start_button.rect.height)
         )
-        if start_anim_surf:
-            sx, sy = start_button.rect.topleft
-            screen.blit(start_anim_surf, (sx, sy))
+        screen.blit(scaled_anim_frame, start_button.rect.topleft)
 
         for event in pygame.event.get():
             if event.type == QUIT:
                 cap_lobby.release()
-                cap_start.release()
                 pygame.quit()
                 sys.exit()
             if event.type == MOUSEBUTTONDOWN and event.button == 1:
@@ -1046,35 +999,31 @@ def main_menu(assets):
                 if shop_button.is_clicked(pos):
                     shop_screen()
                     cap_lobby.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    cap_start.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 if player1_left_arrow.is_clicked(pos):
                     player1_index = (player1_index - 1) % len(options)
-                    left_glow_time = time.time()  # Триггер для glow левого превью
-                    left_matrix_time = time.time()  # Триггер для matrix левого превью
+                    left_glow_time = time.time()
+                    left_matrix_time = time.time()
                 if player1_right_arrow.is_clicked(pos):
                     player1_index = (player1_index + 1) % len(options)
                     left_glow_time = time.time()
                     left_matrix_time = time.time()
                 if player2_left_arrow.is_clicked(pos):
                     player2_index = (player2_index - 1) % len(options)
-                    right_glow_time = time.time()  # Триггер для glow правого превью
-                    right_matrix_time = time.time()  # Триггер для matrix правого превью
+                    right_glow_time = time.time()
+                    right_matrix_time = time.time()
                 if player2_right_arrow.is_clicked(pos):
                     player2_index = (player2_index + 1) % len(options)
                     right_glow_time = time.time()
                     right_matrix_time = time.time()
                 if start_button.is_clicked(pos):
                     cap_lobby.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    cap_start.set(cv2.CAP_PROP_POS_FRAMES, 0)
                     player1_choice = options[player1_index]
                     player2_choice = options[player2_index]
                     cap_lobby.release()
-                    cap_start.release()
                     main_game(player1_choice, player2_choice, assets)
                     assets["video_lobby"] = cv2.VideoCapture("лобби.mp4")
-                    assets["video_start"] = cv2.VideoCapture("start game.mov")
                     cap_lobby = assets["video_lobby"]
-                    cap_start = assets["video_start"]
+                    start_game_anim_start = time.time()
 
         pygame.display.flip()
         clock.tick(FPS)
