@@ -395,7 +395,7 @@ def show_loading_screen(progress, total):
 
 
 def load_all_assets():
-    total_load_steps = 400
+    total_load_steps = 704  # 500 + 41 + 41 + 55 + 47 = 500 + 184 = 684; здесь значение может быть скорректировано по вашим нуждам
     current_progress = 0
     show_loading_screen(current_progress, total_load_steps)
 
@@ -452,16 +452,28 @@ def load_all_assets():
     current_progress += 1
     show_loading_screen(current_progress, total_load_steps)
 
-    durov_idle_video = cv2.VideoCapture("video_durov_idle.mp4")
-    current_progress += 1
-    show_loading_screen(current_progress, total_load_steps)
-
-    pepe_idle_video = cv2.VideoCapture("video_pepe_idle.mp4")
-    current_progress += 1
-    show_loading_screen(current_progress, total_load_steps)
-
     ai_image = load_image_with_fallback("AI_name.png", 300, 300, GRAY)
     current_progress += 1
+    show_loading_screen(current_progress, total_load_steps)
+
+    # Загрузка glow-анимаций
+    left_glow = create_pepe_animation("свечение_левое", 41, "Left glow", 1920, 1080)
+    current_progress += 41
+    show_loading_screen(current_progress, total_load_steps)
+
+    right_glow = create_pepe_animation("свечение_правое", 41, "Right glow", 1920, 1080)
+    current_progress += 41
+    show_loading_screen(current_progress, total_load_steps)
+
+    # Новое: загрузка matrix-анимаций
+    matrix_durov = create_pepe_animation(
+        "matrix_durov", 55, "Holomatrix Durov", 350, 350
+    )
+    current_progress += 55
+    show_loading_screen(current_progress, total_load_steps)
+
+    matrix_pepe = create_pepe_animation("matrix_pepe", 47, "Holomatrix pepe", 350, 350)
+    current_progress += 47
     show_loading_screen(current_progress, total_load_steps)
 
     return {
@@ -484,9 +496,11 @@ def load_all_assets():
         "video": main_video,
         "video_lobby": lobby_video,
         "video_start": start_button_video,
-        "video_durov_idle": durov_idle_video,
-        "video_pepe_idle": pepe_idle_video,
         "ai_image": ai_image,
+        "left_glow": left_glow,
+        "right_glow": right_glow,
+        "matrix_durov": matrix_durov,
+        "matrix_pepe": matrix_pepe,
     }
 
 
@@ -837,16 +851,44 @@ def main_game(player1_choice, player2_choice, assets):
 
 
 def main_menu(assets):
+    # Загрузка glow-анимаций (если ещё не загружены)
+    if "left_glow" not in assets:
+        assets["left_glow"] = create_pepe_animation(
+            "свечение_левое", 41, "Left glow", 1920, 1080
+        )
+    if "right_glow" not in assets:
+        assets["right_glow"] = create_pepe_animation(
+            "свечение_правое", 41, "Right glow", 1920, 1080
+        )
+    # Загрузка matrix-анимаций с размером 350x350
+    if "matrix_durov" not in assets:
+        assets["matrix_durov"] = create_pepe_animation(
+            "matrix_durov", 55, "Holomatrix Durov", 350, 350
+        )
+    if "matrix_pepe" not in assets:
+        assets["matrix_pepe"] = create_pepe_animation(
+            "matrix_pepe", 47, "Holomatrix pepe", 350, 350
+        )
+
     cap_lobby = assets["video_lobby"]
     cap_start = assets["video_start"]
-    cap_durov_idle = assets["video_durov_idle"]
-    cap_pepe_idle = assets["video_pepe_idle"]
+    # Удаляем использование cap_durov_idle и cap_pepe_idle полностью
     ai_image = assets["ai_image"]
 
-    # Сбрасываем позицию фоновых видео один раз при входе в главное меню,
-    # чтобы они начинались с начала.
+    # Сброс позиций фоновых видео при входе в главное меню
     cap_lobby.set(cv2.CAP_PROP_POS_FRAMES, 0)
     cap_start.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
+    # Таймеры для glow-анимаций
+    left_glow_time = 0
+    right_glow_time = 0
+    glow_duration = 1.0  # секунд
+    left_glow_frames = assets["left_glow"]
+    right_glow_frames = assets["right_glow"]
+
+    # Таймеры для matrix-анимаций – они будут отображаться до смены выбора
+    left_matrix_time = time.time()  # сразу при запуске
+    right_matrix_time = time.time()
 
     font = pygame.font.SysFont(None, 74)
     font_label = pygame.font.SysFont(None, 36)
@@ -869,22 +911,15 @@ def main_menu(assets):
     player2_left_arrow = Button(pygame.Rect(SCREEN_WIDTH - 320, 200, 50, 50), RED, "<")
     player2_right_arrow = Button(pygame.Rect(SCREEN_WIDTH - 100, 200, 50, 50), RED, ">")
 
-    running = True
-    while running:
+    while True:
         if not cap_lobby.isOpened():
             assets["video_lobby"] = cv2.VideoCapture("лобби.mp4")
             cap_lobby = assets["video_lobby"]
         if not cap_start.isOpened():
             assets["video_start"] = cv2.VideoCapture("start game.mov")
             cap_start = assets["video_start"]
-        if not cap_durov_idle.isOpened():
-            assets["video_durov_idle"] = cv2.VideoCapture("video_durov_idle.mp4")
-            cap_durov_idle = assets["video_durov_idle"]
-        if not cap_pepe_idle.isOpened():
-            assets["video_pepe_idle"] = cv2.VideoCapture("video_pepe_idle.mp4")
-            cap_pepe_idle = assets["video_pepe_idle"]
 
-        # Для фоновых видео сбрасываем позицию только один раз (уже сделано выше)
+        # Фоновые видео
         lobby_surf = get_frame_surface(cap_lobby, SCREEN_WIDTH, SCREEN_HEIGHT)
         if lobby_surf:
             screen.blit(lobby_surf, (0, 0))
@@ -910,24 +945,42 @@ def main_menu(assets):
         p1_text_rect = p1_choice_surf.get_rect(center=p1_label_rect.center)
         screen.blit(p1_choice_surf, p1_text_rect)
 
-        preview_rect1 = pygame.Rect(50, 270, 300, 300)
-        if options[player1_index] == "durov":
-            durov_idle_surf = get_frame_surface(
-                cap_durov_idle, preview_rect1.width, preview_rect1.height
-            )
-            if durov_idle_surf:
-                screen.blit(durov_idle_surf, preview_rect1.topleft)
-        elif options[player1_index] == "pepe":
-            pepe_idle_surf = get_frame_surface(
-                cap_pepe_idle, preview_rect1.width, preview_rect1.height
-            )
-            if pepe_idle_surf:
-                screen.blit(pepe_idle_surf, preview_rect1.topleft)
-        else:
+        # Превью для Player 1 – теперь размер 350x350
+        preview_rect1 = pygame.Rect(300, 600, 350, 350)
+        if options[player1_index] == "ai":
             ai_img_scaled = pygame.transform.scale(
                 ai_image, (preview_rect1.width, preview_rect1.height)
             )
             screen.blit(ai_img_scaled, preview_rect1.topleft)
+        else:
+            # Используем matrix-анимацию для персонажей
+            if options[player1_index] == "durov":
+                matrix_frames = assets["matrix_durov"]
+            else:
+                matrix_frames = assets["matrix_pepe"]
+            # Отображаем текущий кадр matrix-анимации, масштабированный до превью
+            frame_index = int(
+                ((time.time() - left_matrix_time) * 10) % len(matrix_frames)
+            )
+            scaled_matrix = pygame.transform.scale(
+                matrix_frames[frame_index], (preview_rect1.width, preview_rect1.height)
+            )
+            screen.blit(scaled_matrix, preview_rect1.topleft)
+
+        # Отрисовка glow-анимации для левого превью (растягивается на весь экран)
+        current_time = time.time()
+        if current_time - left_glow_time < glow_duration:
+            frame_index = int(
+                ((current_time - left_glow_time) / glow_duration)
+                * len(left_glow_frames)
+            )
+            if frame_index >= len(left_glow_frames):
+                frame_index = len(left_glow_frames) - 1
+            glow_frame = left_glow_frames[frame_index]
+            scaled_glow = pygame.transform.scale(
+                glow_frame, (SCREEN_WIDTH, SCREEN_HEIGHT)
+            )
+            screen.blit(scaled_glow, (0, 0))
 
         player2_left_arrow.draw(screen)
         player2_right_arrow.draw(screen)
@@ -939,24 +992,38 @@ def main_menu(assets):
         p2_text_rect = p2_choice_surf.get_rect(center=p2_label_rect.center)
         screen.blit(p2_choice_surf, p2_text_rect)
 
-        preview_rect2 = pygame.Rect(SCREEN_WIDTH - 350, 270, 300, 300)
-        if options[player2_index] == "durov":
-            durov_idle_surf = get_frame_surface(
-                cap_durov_idle, preview_rect2.width, preview_rect2.height
-            )
-            if durov_idle_surf:
-                screen.blit(durov_idle_surf, preview_rect2.topleft)
-        elif options[player2_index] == "pepe":
-            pepe_idle_surf = get_frame_surface(
-                cap_pepe_idle, preview_rect2.width, preview_rect2.height
-            )
-            if pepe_idle_surf:
-                screen.blit(pepe_idle_surf, preview_rect2.topleft)
-        else:
+        preview_rect2 = pygame.Rect(SCREEN_WIDTH - 500, 600, 350, 350)
+        if options[player2_index] == "ai":
             ai_img_scaled = pygame.transform.scale(
                 ai_image, (preview_rect2.width, preview_rect2.height)
             )
             screen.blit(ai_img_scaled, preview_rect2.topleft)
+        else:
+            if options[player2_index] == "durov":
+                matrix_frames = assets["matrix_durov"]
+            else:
+                matrix_frames = assets["matrix_pepe"]
+            frame_index = int(
+                ((time.time() - right_matrix_time) * 10) % len(matrix_frames)
+            )
+            scaled_matrix = pygame.transform.scale(
+                matrix_frames[frame_index], (preview_rect2.width, preview_rect2.height)
+            )
+            screen.blit(scaled_matrix, preview_rect2.topleft)
+
+        # Отрисовка glow-анимации для правого превью (растягивается на весь экран)
+        if current_time - right_glow_time < glow_duration:
+            frame_index = int(
+                ((current_time - right_glow_time) / glow_duration)
+                * len(right_glow_frames)
+            )
+            if frame_index >= len(right_glow_frames):
+                frame_index = len(right_glow_frames) - 1
+            glow_frame = right_glow_frames[frame_index]
+            scaled_glow = pygame.transform.scale(
+                glow_frame, (SCREEN_WIDTH, SCREEN_HEIGHT)
+            )
+            screen.blit(scaled_glow, (0, 0))
 
         start_button.draw(screen)
         shop_button.draw(screen)
@@ -972,8 +1039,6 @@ def main_menu(assets):
             if event.type == QUIT:
                 cap_lobby.release()
                 cap_start.release()
-                cap_durov_idle.release()
-                cap_pepe_idle.release()
                 pygame.quit()
                 sys.exit()
             if event.type == MOUSEBUTTONDOWN and event.button == 1:
@@ -984,12 +1049,20 @@ def main_menu(assets):
                     cap_start.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 if player1_left_arrow.is_clicked(pos):
                     player1_index = (player1_index - 1) % len(options)
+                    left_glow_time = time.time()  # Триггер для glow левого превью
+                    left_matrix_time = time.time()  # Триггер для matrix левого превью
                 if player1_right_arrow.is_clicked(pos):
                     player1_index = (player1_index + 1) % len(options)
+                    left_glow_time = time.time()
+                    left_matrix_time = time.time()
                 if player2_left_arrow.is_clicked(pos):
                     player2_index = (player2_index - 1) % len(options)
+                    right_glow_time = time.time()  # Триггер для glow правого превью
+                    right_matrix_time = time.time()  # Триггер для matrix правого превью
                 if player2_right_arrow.is_clicked(pos):
                     player2_index = (player2_index + 1) % len(options)
+                    right_glow_time = time.time()
+                    right_matrix_time = time.time()
                 if start_button.is_clicked(pos):
                     cap_lobby.set(cv2.CAP_PROP_POS_FRAMES, 0)
                     cap_start.set(cv2.CAP_PROP_POS_FRAMES, 0)
@@ -997,19 +1070,11 @@ def main_menu(assets):
                     player2_choice = options[player2_index]
                     cap_lobby.release()
                     cap_start.release()
-                    cap_durov_idle.release()
-                    cap_pepe_idle.release()
                     main_game(player1_choice, player2_choice, assets)
                     assets["video_lobby"] = cv2.VideoCapture("лобби.mp4")
                     assets["video_start"] = cv2.VideoCapture("start game.mov")
-                    assets["video_durov_idle"] = cv2.VideoCapture(
-                        "video_durov_idle.mp4"
-                    )
-                    assets["video_pepe_idle"] = cv2.VideoCapture("video_pepe_idle.mp4")
                     cap_lobby = assets["video_lobby"]
                     cap_start = assets["video_start"]
-                    cap_durov_idle = assets["video_durov_idle"]
-                    cap_pepe_idle = assets["video_pepe_idle"]
 
         pygame.display.flip()
         clock.tick(FPS)
