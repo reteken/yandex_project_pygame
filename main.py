@@ -182,10 +182,10 @@ class Player(pygame.sprite.Sprite):
             self.on_ground = False
             self.is_jumping = True
         current_time = time.time()
-        if keys[controls["shoot"]] and current_time - self.last_shot_time > 0.1:
+        if keys[controls["shoot"]] and current_time - self.last_shot_time > 1:
             self.last_shot_time = current_time
             direction = 1 if self.rect.x < other.rect.x else -1
-            for i in range(3):
+            for i in range(1):
                 bullet = Bullet(
                     self.rect.centerx,
                     self.rect.centery - 10 + i * 10,
@@ -350,7 +350,7 @@ def load_animation(folder, frame_count, prefix, width=350, height=350):
     return frames
 
 
-def create_pepe_animation(folder, frame_count, prefix, width=300, height=300):
+def create_pepe_animation(folder, frame_count, prefix, width=350, height=350):
     frames = []
     for i in range(frame_count):
         frame_number = str(i).zfill(5)
@@ -360,7 +360,9 @@ def create_pepe_animation(folder, frame_count, prefix, width=300, height=300):
     return frames
 
 
-def load_bullet_animation(folder, frame_count, prefix, width=60, height=60, color=GRAY):
+def load_bullet_animation(
+    folder, frame_count, prefix, width=200, height=200, color=GRAY
+):
     frames = []
     for i in range(frame_count):
         frame_number = str(i).zfill(5)
@@ -429,11 +431,12 @@ def load_all_assets():
     current_progress += 60
     show_loading_screen(current_progress, total_load_steps)
 
-    ton_bullet = load_bullet_animation("ton coin", 155, "ton coin", 45, 45, GRAY)
+    # Увеличиваем размер пули в 2 раза: вместо 45x45 используем 90x90
+    ton_bullet = load_bullet_animation("ton coin", 155, "ton coin", 90, 90, GRAY)
     current_progress += 155
     show_loading_screen(current_progress, total_load_steps)
 
-    pepe_bullet = load_bullet_animation("pepe coin", 155, "пепе пуля", 45, 45, PURPLE)
+    pepe_bullet = load_bullet_animation("pepe coin", 155, "пепе пуля", 90, 90, PURPLE)
     current_progress += 155
     show_loading_screen(current_progress, total_load_steps)
 
@@ -524,328 +527,313 @@ def shop_screen():
         clock.tick(FPS)
 
 
+class AIPlayerLocal(Player):
+    def inputer(
+        self,
+        other,
+        keys,
+        controls,
+        bullets_group,
+        bullet_animation_frames,
+        bullet_type,
+    ):
+        pass
+
+
+def load_image_with_fallback(path, width, height, fallback_color):
+    try:
+        image = pygame.image.load(path).convert_alpha()
+    except:
+        image = pygame.Surface((width, height))
+        image.fill(fallback_color)
+    return pygame.transform.scale(image, (width, height))
+
+
+def load_animation(folder, frame_count, prefix, width=350, height=350):
+    frames = []
+    for i in range(frame_count):
+        path = f"{folder}/{prefix}_{i+1}.png"
+        frame_surf = load_image_with_fallback(path, width, height, ORANGE)
+        frames.append(frame_surf)
+    return frames
+
+
+def create_pepe_animation(folder, frame_count, prefix, width=300, height=300):
+    frames = []
+    for i in range(frame_count):
+        frame_number = str(i).zfill(5)
+        path = f"{folder}/{prefix}_{frame_number}.png"
+        frame_surf = load_image_with_fallback(path, width, height, BLUE)
+        frames.append(frame_surf)
+    return frames
+
+
 def main_game(player1_choice, player2_choice, assets):
-    cap = assets["video"]
-    shadow_img = pygame.image.load("тень.png").convert_alpha()
-    shadow_img = pygame.transform.scale(
-        shadow_img, (shadow_img.get_width() // 4, shadow_img.get_height() // 4)
-    )
-    fixed_shadow_y = SCREEN_HEIGHT - 100 - (shadow_img.get_height() // 2)
+    # Игра проходит в раундах до 2 побед одного из игроков.
+    score1 = 0
+    score2 = 0
+    round_number = 0
 
-    def get_video_frame_surface():
-        ret, frame = cap.read()
-        if not ret:
-            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-            ret, frame = cap.read()
+    # Внешний цикл матча (до 2 побед)
+    while score1 < 2 and score2 < 2:
+        round_number += 1
+        # Сбрасываем фоновое видео (поле) для нового раунда
+        assets["video"].set(cv2.CAP_PROP_POS_FRAMES, 0)
+        shadow_img = pygame.image.load("тень.png").convert_alpha()
+        shadow_img = pygame.transform.scale(
+            shadow_img, (shadow_img.get_width() // 4, shadow_img.get_height() // 4)
+        )
+        fixed_shadow_y = SCREEN_HEIGHT - 100 - (shadow_img.get_height() // 2)
+
+        def get_video_frame_surface():
+            ret, frame = assets["video"].read()
             if not ret:
-                return None
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        frame = cv2.resize(frame, (SCREEN_WIDTH, SCREEN_HEIGHT))
-        return pygame.surfarray.make_surface(np.transpose(frame, (1, 0, 2)))
+                assets["video"].set(cv2.CAP_PROP_POS_FRAMES, 0)
+                ret, frame = assets["video"].read()
+                if not ret:
+                    return None
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            frame = cv2.resize(frame, (SCREEN_WIDTH, SCREEN_HEIGHT))
+            return pygame.surfarray.make_surface(np.transpose(frame, (1, 0, 2)))
 
-    player1_controls = {
-        "left": K_a,
-        "right": K_d,
-        "jump": K_w,
-        "shoot": K_SPACE,
-        "hit": K_e,
-    }
-    player2_controls = {
-        "left": K_LEFT,
-        "right": K_RIGHT,
-        "jump": K_UP,
-        "shoot": K_RCTRL,
-        "hit": K_LALT,
-    }
+        # Определяем контролы (как в исходном коде)
+        player1_controls = {
+            "left": K_a,
+            "right": K_d,
+            "jump": K_w,
+            "shoot": K_SPACE,
+            "hit": K_e,
+        }
+        player2_controls = {
+            "left": K_LEFT,
+            "right": K_RIGHT,
+            "jump": K_UP,
+            "shoot": K_RCTRL,
+            "hit": K_LALT,
+        }
 
-    class AIPlayerLocal(AIPlayer):
-        def __init__(
-            self, x, y, run_frames, jump_frames, hit_frames, idle_frames, is_pepe=False
-        ):
-            super().__init__(
-                x, y, run_frames, jump_frames, hit_frames, idle_frames, is_pepe=is_pepe
+        # Инициализация анимаций игроков в зависимости от выбора
+        if player1_choice == "durov":
+            p1_run_frames = assets["durov"]["run"]
+            p1_jump_frames = assets["durov"]["jump"]
+            p1_hit_frames = assets["durov"]["hit"]
+            p1_idle_frames = assets["durov"]["idle"]
+            p1_is_pepe = False
+        elif player1_choice == "pepe":
+            p1_run_frames = assets["pepe"]["run"]
+            p1_jump_frames = assets["pepe"]["jump"]
+            p1_hit_frames = assets["pepe"]["hit"]
+            p1_idle_frames = assets["pepe"]["idle"]
+            p1_is_pepe = True
+        else:
+            p1_run_frames = assets["durov"]["run"]
+            p1_jump_frames = assets["durov"]["jump"]
+            p1_hit_frames = assets["durov"]["hit"]
+            p1_idle_frames = assets["durov"]["idle"]
+            p1_is_pepe = False
+
+        if player2_choice == "durov":
+            p2_run_frames = assets["durov"]["run"]
+            p2_jump_frames = assets["durov"]["jump"]
+            p2_hit_frames = assets["durov"]["hit"]
+            p2_idle_frames = assets["durov"]["idle"]
+            p2_is_pepe = False
+        elif player2_choice == "pepe":
+            p2_run_frames = assets["pepe"]["run"]
+            p2_jump_frames = assets["pepe"]["jump"]
+            p2_hit_frames = assets["pepe"]["hit"]
+            p2_idle_frames = assets["pepe"]["idle"]
+            p2_is_pepe = True
+        else:
+            p2_run_frames = assets["durov"]["run"]
+            p2_jump_frames = assets["durov"]["jump"]
+            p2_hit_frames = assets["durov"]["hit"]
+            p2_idle_frames = assets["durov"]["idle"]
+            p2_is_pepe = False
+
+        # Используем увеличенные анимации пуль (90x90)
+        p1_bullet_frames = (
+            assets["bullets"]["pepe"] if p1_is_pepe else assets["bullets"]["ton"]
+        )
+        p2_bullet_frames = (
+            assets["bullets"]["pepe"] if p2_is_pepe else assets["bullets"]["ton"]
+        )
+        p1_bullet_type = "pepe" if p1_is_pepe else "ton"
+        p2_bullet_type = "pepe" if p2_is_pepe else "ton"
+
+        # Создаем игроков (если выбран AI, то используем AIPlayerLocal)
+        if player1_choice == "ai":
+            player1 = AIPlayerLocal(
+                100,
+                SCREEN_HEIGHT - 250,
+                p1_run_frames,
+                p1_jump_frames,
+                p1_hit_frames,
+                p1_idle_frames,
+                is_pepe=p1_is_pepe,
             )
-            self.desired_distance = 250
-            self.close_range = 180
-            self.far_range = 800
+        else:
+            player1 = Player(
+                100,
+                SCREEN_HEIGHT - 250,
+                p1_run_frames,
+                p1_jump_frames,
+                p1_hit_frames,
+                p1_idle_frames,
+                is_pepe=p1_is_pepe,
+            )
 
-        def inputer(
-            self,
-            other,
-            keys,
-            controls,
-            bullets_group,
-            bullet_animation_frames,
-            bullet_type,
-        ):
-            self.is_moving = False
-            direction = 1 if other.rect.x > self.rect.x else -1
-            distance = abs(self.rect.centerx - other.rect.centerx)
-            if distance < self.close_range:
-                if random.random() < 0.1:
-                    self.rect.x -= self.speed * direction
-                    self.is_moving = True
-                    if direction == 1 and self.facing_right:
-                        self.flip_images()
-                        self.facing_right = False
-                    elif direction == -1 and not self.facing_right:
-                        self.flip_images()
-                        self.facing_right = True
-                else:
-                    self.rect.x += self.speed * direction
-                    self.is_moving = True
-                    if direction == 1 and not self.facing_right:
-                        self.flip_images()
-                        self.facing_right = True
-                    elif direction == -1 and self.facing_right:
-                        self.flip_images()
-                        self.facing_right = False
-            elif distance > self.far_range:
-                self.rect.x += self.speed * direction
-                self.is_moving = True
-                if direction == 1 and not self.facing_right:
-                    self.flip_images()
-                    self.facing_right = True
-                elif direction == -1 and self.facing_right:
-                    self.flip_images()
-                    self.facing_right = False
+        if player2_choice == "ai":
+            player2 = AIPlayerLocal(
+                SCREEN_WIDTH - 200,
+                SCREEN_HEIGHT - 250,
+                p2_run_frames,
+                p2_jump_frames,
+                p2_hit_frames,
+                p2_idle_frames,
+                is_pepe=p2_is_pepe,
+            )
+        else:
+            player2 = Player(
+                SCREEN_WIDTH - 200,
+                SCREEN_HEIGHT - 250,
+                p2_run_frames,
+                p2_jump_frames,
+                p2_hit_frames,
+                p2_idle_frames,
+                is_pepe=p2_is_pepe,
+            )
+
+        all_sprites = pygame.sprite.Group()
+        all_sprites.add(player1, player2)
+        bullets = pygame.sprite.Group()
+
+        round_duration = 60  # длительность раунда в секундах
+        round_start_time = time.time()
+        running_round = True
+
+        while running_round:
+            video_surface = get_frame_surface(
+                assets["video"], SCREEN_WIDTH, SCREEN_HEIGHT
+            )
+            if video_surface:
+                screen.blit(video_surface, (0, 0))
             else:
-                if random.random() < 0.02:
-                    step_dir = 1 if random.random() < 0.5 else -1
-                    self.rect.x += step_dir * self.speed
-                    self.is_moving = True
-                    if step_dir == 1 and not self.facing_right:
-                        self.flip_images()
-                        self.facing_right = True
-                    elif step_dir == -1 and self.facing_right:
-                        self.flip_images()
-                        self.facing_right = False
-            self.rect.x = max(0, min(self.rect.x, SCREEN_WIDTH - self.rect.width))
-            if self.on_ground and random.random() < 0.03:
-                self.dy = self.jump_speed
-                self.on_ground = False
-                self.is_jumping = True
-            current_time = time.time()
-            if current_time - self.last_shot_time > 0.2:
-                self.last_shot_time = current_time
-                for i in range(3):
-                    bullet = Bullet(
-                        self.rect.centerx,
-                        self.rect.centery - 10 + i * 10,
-                        direction,
-                        self,
-                        bullet_animation_frames,
-                        bullet_type,
-                    )
-                    bullets_group.add(bullet)
-            if distance < 110 and current_time - self.last_hit_time > 1.0:
-                if random.random() < 0.6:
-                    self.is_hitting = True
-                    self.hit_frame = 0
-                    self.last_hit_time = current_time
-                    if direction == 1:
-                        self.rect.x += 15
-                    else:
-                        self.rect.x -= 15
-                    if self.rect.colliderect(other.rect):
-                        other.health -= 10
-            self.rect.x = max(0, min(self.rect.x, SCREEN_WIDTH - self.rect.width))
-            floor_level = SCREEN_HEIGHT - 100
-            if self.rect.bottom >= floor_level:
-                self.rect.bottom = floor_level
-                self.dy = 0
-                self.on_ground = True
-                self.is_jumping = False
-                self.jump_frame = 0
+                screen.fill(WHITE)
 
-    if player1_choice == "durov":
-        p1_run_frames = assets["durov"]["run"]
-        p1_jump_frames = assets["durov"]["jump"]
-        p1_hit_frames = assets["durov"]["hit"]
-        p1_idle_frames = assets["durov"]["idle"]
-        p1_is_pepe = False
-    elif player1_choice == "pepe":
-        p1_run_frames = assets["pepe"]["run"]
-        p1_jump_frames = assets["pepe"]["jump"]
-        p1_hit_frames = assets["pepe"]["hit"]
-        p1_idle_frames = assets["pepe"]["idle"]
-        p1_is_pepe = True
-    else:
-        p1_run_frames = assets["durov"]["run"]
-        p1_jump_frames = assets["durov"]["jump"]
-        p1_hit_frames = assets["durov"]["hit"]
-        p1_idle_frames = assets["durov"]["idle"]
-        p1_is_pepe = False
+            elapsed = time.time() - round_start_time
+            remaining = round_duration - elapsed
+            info_text = f"Time: {int(remaining)}   Score: P1 {score1} - {score2} P2   Round: {round_number}"
+            info_surf = pygame.font.SysFont(None, 50).render(info_text, True, YELLOW)
+            info_rect = info_surf.get_rect(center=(SCREEN_WIDTH // 2, 50))
+            screen.blit(info_surf, info_rect)
 
-    if player2_choice == "durov":
-        p2_run_frames = assets["durov"]["run"]
-        p2_jump_frames = assets["durov"]["jump"]
-        p2_hit_frames = assets["durov"]["hit"]
-        p2_idle_frames = assets["durov"]["idle"]
-        p2_is_pepe = False
-    elif player2_choice == "pepe":
-        p2_run_frames = assets["pepe"]["run"]
-        p2_jump_frames = assets["pepe"]["jump"]
-        p2_hit_frames = assets["pepe"]["hit"]
-        p2_idle_frames = assets["pepe"]["idle"]
-        p2_is_pepe = True
-    else:
-        p2_run_frames = assets["durov"]["run"]
-        p2_jump_frames = assets["durov"]["jump"]
-        p2_hit_frames = assets["durov"]["hit"]
-        p2_idle_frames = assets["durov"]["idle"]
-        p2_is_pepe = False
+            for event in pygame.event.get():
+                if event.type == QUIT:
+                    pygame.quit()
+                    sys.exit()
 
-    p1_bullet_frames = (
-        assets["bullets"]["pepe"] if p1_is_pepe else assets["bullets"]["ton"]
-    )
-    p2_bullet_frames = (
-        assets["bullets"]["pepe"] if p2_is_pepe else assets["bullets"]["ton"]
-    )
-    p1_bullet_type = "pepe" if p1_is_pepe else "ton"
-    p2_bullet_type = "pepe" if p2_is_pepe else "ton"
+            keys = pygame.key.get_pressed()
+            p1_keys = {key: keys[key] for key in player1_controls.values()}
+            p2_keys = {key: keys[key] for key in player2_controls.values()}
 
-    if player1_choice == "ai":
-        player1 = AIPlayerLocal(
-            100,
-            SCREEN_HEIGHT - 250,
-            p1_run_frames,
-            p1_jump_frames,
-            p1_hit_frames,
-            p1_idle_frames,
-            is_pepe=p1_is_pepe,
+            player1.update(
+                player2,
+                p1_keys,
+                player1_controls,
+                bullets,
+                p1_bullet_frames,
+                p1_bullet_type,
+            )
+            player2.update(
+                player1,
+                p2_keys,
+                player2_controls,
+                bullets,
+                p2_bullet_frames,
+                p2_bullet_type,
+            )
+            bullets.update()
+
+            for bullet in bullets:
+                if bullet.owner != player1 and pygame.sprite.collide_mask(
+                    bullet, player1
+                ):
+                    player1.health = max(0, player1.health - 1)
+                    bullet.kill()
+                if bullet.owner != player2 and pygame.sprite.collide_mask(
+                    bullet, player2
+                ):
+                    player2.health = max(0, player2.health - 1)
+                    bullet.kill()
+
+            if player1.health <= 0 or player2.health <= 0 or remaining <= 0:
+                running_round = False
+
+            shadow_x1 = player1.rect.centerx - shadow_img.get_width() // 2
+            screen.blit(
+                shadow_img,
+                (shadow_x1, SCREEN_HEIGHT - 100 - (shadow_img.get_height() // 2)),
+            )
+            shadow_x2 = player2.rect.centerx - shadow_img.get_width() // 2
+            screen.blit(
+                shadow_img,
+                (shadow_x2, SCREEN_HEIGHT - 100 - (shadow_img.get_height() // 2)),
+            )
+
+            all_sprites.draw(screen)
+            bullets.draw(screen)
+
+            player1.draw_health_bar(screen, 50, 50)
+            player2.draw_health_bar(screen, SCREEN_WIDTH - 150, 50)
+
+            pygame.display.flip()
+            clock.tick(FPS)
+
+        # Определяем победителя раунда
+        if player1.health <= 0 and player2.health > 0:
+            round_winner = "Player 2"
+            score2 += 1
+        elif player2.health <= 0 and player1.health > 0:
+            round_winner = "Player 1"
+            score1 += 1
+        else:
+            if player1.health > player2.health:
+                round_winner = "Player 1"
+                score1 += 1
+            elif player2.health > player1.health:
+                round_winner = "Player 2"
+                score2 += 1
+            else:
+                round_winner = "Draw"
+
+        result_text = f"Round {round_number} Result: {round_winner}"
+        result_surf = pygame.font.SysFont(None, 74).render(result_text, True, YELLOW)
+        result_rect = result_surf.get_rect(
+            center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
         )
-    else:
-        player1 = Player(
-            100,
-            SCREEN_HEIGHT - 250,
-            p1_run_frames,
-            p1_jump_frames,
-            p1_hit_frames,
-            p1_idle_frames,
-            is_pepe=p1_is_pepe,
-        )
-
-    if player2_choice == "ai":
-        player2 = AIPlayerLocal(
-            SCREEN_WIDTH - 200,
-            SCREEN_HEIGHT - 250,
-            p2_run_frames,
-            p2_jump_frames,
-            p2_hit_frames,
-            p2_idle_frames,
-            is_pepe=p2_is_pepe,
-        )
-    else:
-        player2 = Player(
-            SCREEN_WIDTH - 200,
-            SCREEN_HEIGHT - 250,
-            p2_run_frames,
-            p2_jump_frames,
-            p2_hit_frames,
-            p2_idle_frames,
-            is_pepe=p2_is_pepe,
-        )
-
-    all_sprites = pygame.sprite.Group()
-    all_sprites.add(player1, player2)
-    bullets = pygame.sprite.Group()
-
-    def show_winner_screen(winner_text):
-        font = pygame.font.SysFont(None, 74)
-        text_surf = font.render(winner_text, True, YELLOW)
-        text_rect = text_surf.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 180))
         screen.blit(overlay, (0, 0))
-        screen.blit(text_surf, text_rect)
+        screen.blit(result_surf, result_rect)
         pygame.display.flip()
         pygame.time.wait(2000)
 
-    running = True
-    winner = None
-    round_duration = 60
-    start_time = time.time()
-    time_font = pygame.font.SysFont(None, 60)
-
-    while running:
-        video_surface = get_video_frame_surface()
-        if video_surface:
-            screen.blit(video_surface, (0, 0))
-        else:
-            screen.fill(WHITE)
-
-        for event in pygame.event.get():
-            if event.type == QUIT:
-                pygame.quit()
-                sys.exit()
-
-        elapsed_time = time.time() - start_time
-        remaining_time = round_duration - elapsed_time
-        if remaining_time <= 0:
-            winner = "DRAW!"
-            running = False
-        else:
-            timer_text = str(int(remaining_time))
-            text_surf = time_font.render(timer_text, True, YELLOW)
-            text_rect = text_surf.get_rect(center=(SCREEN_WIDTH // 2, 50))
-            screen.blit(text_surf, text_rect)
-
-        keys = pygame.key.get_pressed()
-        p1_keys = {key: keys[key] for key in player1_controls.values()}
-        p2_keys = {key: keys[key] for key in player2_controls.values()}
-
-        player1.update(
-            player2,
-            p1_keys,
-            player1_controls,
-            bullets,
-            p1_bullet_frames,
-            p1_bullet_type,
-        )
-        player2.update(
-            player1,
-            p2_keys,
-            player2_controls,
-            bullets,
-            p2_bullet_frames,
-            p2_bullet_type,
-        )
-        bullets.update()
-
-        for bullet in bullets:
-            if bullet.owner != player1 and pygame.sprite.collide_mask(bullet, player1):
-                player1.health = max(0, player1.health - 1)
-                bullet.kill()
-            if bullet.owner != player2 and pygame.sprite.collide_mask(bullet, player2):
-                player2.health = max(0, player2.health - 1)
-                bullet.kill()
-
-        if player1.health <= 0 or player2.health <= 0:
-            if player1.health <= 0 < player2.health:
-                winner = "Player 2 WINS!"
-            elif player2.health <= 0 < player1.health:
-                winner = "Player 1 WINS!"
-            else:
-                winner = "DRAW!"
-            running = False
-
-        shadow_x1 = player1.rect.centerx - shadow_img.get_width() // 2
-        screen.blit(shadow_img, (shadow_x1, fixed_shadow_y))
-        shadow_x2 = player2.rect.centerx - shadow_img.get_width() // 2
-        screen.blit(shadow_img, (shadow_x2, fixed_shadow_y))
-
-        all_sprites.draw(screen)
-        bullets.draw(screen)
-
-        player1.draw_health_bar(screen, 50, 50)
-        player2.draw_health_bar(screen, SCREEN_WIDTH - 150, 50)
-
-        pygame.display.flip()
-        clock.tick(FPS)
-
-    if winner is not None:
-        show_winner_screen(winner)
+    # После матча определяем финального победителя
+    if score1 > score2:
+        final_text = "Player 1 WINS the match!"
+    elif score2 > score1:
+        final_text = "Player 2 WINS the match!"
+    else:
+        final_text = "MATCH DRAW!"
+    final_surf = pygame.font.SysFont(None, 74).render(final_text, True, YELLOW)
+    final_rect = final_surf.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
+    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 180))
+    screen.blit(overlay, (0, 0))
+    screen.blit(final_surf, final_rect)
+    pygame.display.flip()
+    pygame.time.wait(3000)
 
 
 def main_menu(assets):
@@ -855,6 +843,8 @@ def main_menu(assets):
     cap_pepe_idle = assets["video_pepe_idle"]
     ai_image = assets["ai_image"]
 
+    # Сбрасываем позицию фоновых видео один раз при входе в главное меню,
+    # чтобы они начинались с начала.
     cap_lobby.set(cv2.CAP_PROP_POS_FRAMES, 0)
     cap_start.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
@@ -894,6 +884,7 @@ def main_menu(assets):
             assets["video_pepe_idle"] = cv2.VideoCapture("video_pepe_idle.mp4")
             cap_pepe_idle = assets["video_pepe_idle"]
 
+        # Для фоновых видео сбрасываем позицию только один раз (уже сделано выше)
         lobby_surf = get_frame_surface(cap_lobby, SCREEN_WIDTH, SCREEN_HEIGHT)
         if lobby_surf:
             screen.blit(lobby_surf, (0, 0))

@@ -30,13 +30,36 @@ clock = pygame.time.Clock()
 def get_frame_surface(cap, w, h):
     ret, frame = cap.read()
     if not ret:
+        # Если не удалось прочитать кадр, сбрасываем видео и пробуем снова
         cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
         ret, frame = cap.read()
         if not ret:
             return None
-    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    # Если кадр имеет 3 канала или 4, выполняем соответствующее преобразование
+    if len(frame.shape) == 3:
+        if frame.shape[2] == 4:
+            # Если уже 4 канала, преобразуем из BGRA в RGBA
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2RGBA)
+        elif frame.shape[2] == 3:
+            # Преобразуем из BGR в RGB
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            # Добавляем альфа-канал (полностью непрозрачный)
+            alpha_channel = 255 * np.ones(
+                (frame.shape[0], frame.shape[1], 1), dtype=frame.dtype
+            )
+            frame = np.concatenate((frame, alpha_channel), axis=2)
+    # Масштабируем кадр до нужного размера
     frame = cv2.resize(frame, (w, h))
-    return pygame.surfarray.make_surface(np.transpose(frame, (1, 0, 2)))
+    # Делаем массив непрерывным
+    frame = np.ascontiguousarray(frame)
+    # Создаём поверхность с форматом "RGBA"
+    surface = pygame.image.frombuffer(
+        frame.tobytes(), (frame.shape[1], frame.shape[0]), "RGBA"
+    )
+    return surface.convert_alpha()
+
+
+# Остальной код без изменений (классы Button, Bullet, Player, AIPlayer, функции загрузки анимаций, shop_screen и т.д.)
 
 
 class Button:
@@ -448,16 +471,14 @@ def load_all_assets():
     current_progress += 1
     show_loading_screen(current_progress, total_load_steps)
 
-    # Загружаем по одному видео для idle-анимаций
-    durov_idle_video = cv2.VideoCapture("video_durov_idle.mp4")
+    durov_idle_video = cv2.VideoCapture("video_durov_idle.mov")
     current_progress += 1
     show_loading_screen(current_progress, total_load_steps)
 
-    pepe_idle_video = cv2.VideoCapture("video_pepe_idle.mp4")
+    pepe_idle_video = cv2.VideoCapture("video_pepe_idle.mov")
     current_progress += 1
     show_loading_screen(current_progress, total_load_steps)
 
-    # Загружаем картинку для варианта AI (файл "AI_name.png")
     ai_image = load_image_with_fallback("AI_name.png", 300, 300, GRAY)
     current_progress += 1
     show_loading_screen(current_progress, total_load_steps)
@@ -540,9 +561,20 @@ def main_game(player1_choice, player2_choice, assets):
             ret, frame = cap.read()
             if not ret:
                 return None
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        if len(frame.shape) == 3:
+            if frame.shape[2] == 4:
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2RGBA)
+            elif frame.shape[2] == 3:
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                alpha_channel = 255 * np.ones(
+                    (frame.shape[0], frame.shape[1], 1), dtype=frame.dtype
+                )
+                frame = np.concatenate((frame, alpha_channel), axis=2)
         frame = cv2.resize(frame, (SCREEN_WIDTH, SCREEN_HEIGHT))
-        return pygame.surfarray.make_surface(np.transpose(frame, (1, 0, 2)))
+        frame = np.ascontiguousarray(frame)
+        return pygame.image.frombuffer(
+            frame.tobytes(), (frame.shape[1], frame.shape[0]), "RGBA"
+        ).convert_alpha()
 
     player1_controls = {
         "left": K_a,
@@ -850,12 +882,14 @@ def main_game(player1_choice, player2_choice, assets):
 
 
 def main_menu(assets):
-    # Используем единичные видеопотоки для idle-анимаций
     cap_lobby = assets["video_lobby"]
     cap_start = assets["video_start"]
     cap_durov_idle = assets["video_durov_idle"]
     cap_pepe_idle = assets["video_pepe_idle"]
-    ai_image = assets["ai_image"]  # Картинка для варианта AI
+    ai_image = assets["ai_image"]
+
+    cap_lobby.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    cap_start.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
     font = pygame.font.SysFont(None, 74)
     font_label = pygame.font.SysFont(None, 36)
@@ -869,25 +903,29 @@ def main_menu(assets):
         no_background=True,
     )
 
-    # Варианты выбора персонажа
     options = ["durov", "pepe", "ai"]
     player1_index = 0
     player2_index = 0
 
-    # Для Player 1: стрелка влево, область с текстом и стрелка вправо
     player1_left_arrow = Button(pygame.Rect(50, 200, 50, 50), BLUE, "<")
     player1_right_arrow = Button(pygame.Rect(270, 200, 50, 50), BLUE, ">")
-    # Для Player 2: аналогично, размещаем справа
     player2_left_arrow = Button(pygame.Rect(SCREEN_WIDTH - 320, 200, 50, 50), RED, "<")
     player2_right_arrow = Button(pygame.Rect(SCREEN_WIDTH - 100, 200, 50, 50), RED, ">")
 
     running = True
     while running:
-        # Сбрасываем позицию видеопотоков, чтобы воспроизводить их с начала
-        cap_lobby.set(cv2.CAP_PROP_POS_FRAMES, 0)
-        cap_start.set(cv2.CAP_PROP_POS_FRAMES, 0)
-        cap_durov_idle.set(cv2.CAP_PROP_POS_FRAMES, 0)
-        cap_pepe_idle.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        if not cap_lobby.isOpened():
+            assets["video_lobby"] = cv2.VideoCapture("лобби.mp4")
+            cap_lobby = assets["video_lobby"]
+        if not cap_start.isOpened():
+            assets["video_start"] = cv2.VideoCapture("start game.mov")
+            cap_start = assets["video_start"]
+        if not cap_durov_idle.isOpened():
+            assets["video_durov_idle"] = cv2.VideoCapture("video_durov_idle.mov")
+            cap_durov_idle = assets["video_durov_idle"]
+        if not cap_pepe_idle.isOpened():
+            assets["video_pepe_idle"] = cv2.VideoCapture("video_pepe_idle.mov")
+            cap_pepe_idle = assets["video_pepe_idle"]
 
         lobby_surf = get_frame_surface(cap_lobby, SCREEN_WIDTH, SCREEN_HEIGHT)
         if lobby_surf:
@@ -899,13 +937,11 @@ def main_menu(assets):
         title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, 100))
         screen.blit(title, title_rect)
 
-        # Отрисовка надписей для игроков
         p1_label = font_label.render("Player 1", True, BLUE)
         screen.blit(p1_label, (50, 150))
         p2_label = font_label.render("Player 2", True, RED)
         screen.blit(p2_label, (SCREEN_WIDTH - 250, 150))
 
-        # Отрисовка стрелок и текста для выбора Player 1
         player1_left_arrow.draw(screen)
         player1_right_arrow.draw(screen)
         p1_choice_text = options[player1_index].upper()
@@ -916,7 +952,6 @@ def main_menu(assets):
         p1_text_rect = p1_choice_surf.get_rect(center=p1_label_rect.center)
         screen.blit(p1_choice_surf, p1_text_rect)
 
-        # Отрисовка превью для Player 1
         preview_rect1 = pygame.Rect(50, 270, 300, 300)
         if options[player1_index] == "durov":
             durov_idle_surf = get_frame_surface(
@@ -930,13 +965,12 @@ def main_menu(assets):
             )
             if pepe_idle_surf:
                 screen.blit(pepe_idle_surf, preview_rect1.topleft)
-        else:  # вариант "ai" – вместо текста выводим картинку
+        else:
             ai_img_scaled = pygame.transform.scale(
                 ai_image, (preview_rect1.width, preview_rect1.height)
             )
             screen.blit(ai_img_scaled, preview_rect1.topleft)
 
-        # Отрисовка стрелок и текста для выбора Player 2
         player2_left_arrow.draw(screen)
         player2_right_arrow.draw(screen)
         p2_choice_text = options[player2_index].upper()
@@ -947,7 +981,6 @@ def main_menu(assets):
         p2_text_rect = p2_choice_surf.get_rect(center=p2_label_rect.center)
         screen.blit(p2_choice_surf, p2_text_rect)
 
-        # Отрисовка превью для Player 2
         preview_rect2 = pygame.Rect(SCREEN_WIDTH - 350, 270, 300, 300)
         if options[player2_index] == "durov":
             durov_idle_surf = get_frame_surface(
@@ -961,7 +994,7 @@ def main_menu(assets):
             )
             if pepe_idle_surf:
                 screen.blit(pepe_idle_surf, preview_rect2.topleft)
-        else:  # вариант "ai" – вместо текста выводим картинку
+        else:
             ai_img_scaled = pygame.transform.scale(
                 ai_image, (preview_rect2.width, preview_rect2.height)
             )
@@ -991,36 +1024,34 @@ def main_menu(assets):
                     shop_screen()
                     cap_lobby.set(cv2.CAP_PROP_POS_FRAMES, 0)
                     cap_start.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    cap_durov_idle.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    cap_pepe_idle.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                # Обработка кликов по стрелкам для Player 1
                 if player1_left_arrow.is_clicked(pos):
                     player1_index = (player1_index - 1) % len(options)
                 if player1_right_arrow.is_clicked(pos):
                     player1_index = (player1_index + 1) % len(options)
-                # Обработка кликов по стрелкам для Player 2
                 if player2_left_arrow.is_clicked(pos):
                     player2_index = (player2_index - 1) % len(options)
                 if player2_right_arrow.is_clicked(pos):
                     player2_index = (player2_index + 1) % len(options)
                 if start_button.is_clicked(pos):
+                    cap_lobby.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    cap_start.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    player1_choice = options[player1_index]
+                    player2_choice = options[player2_index]
                     cap_lobby.release()
                     cap_start.release()
                     cap_durov_idle.release()
                     cap_pepe_idle.release()
-                    # После завершения игры переинициализируем видеопотоки для главного меню
-                    cap_lobby = cv2.VideoCapture("лобби.mp4")
-                    cap_lobby.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    cap_start = cv2.VideoCapture("start game.mov")
-                    cap_start.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    cap_durov_idle = cv2.VideoCapture("video_durov_idle.mp4")
-                    cap_durov_idle.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    cap_pepe_idle = cv2.VideoCapture("video_pepe_idle.mp4")
-                    cap_pepe_idle.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    assets["video_lobby"] = cap_lobby
-                    assets["video_start"] = cap_start
-                    assets["video_durov_idle"] = cap_durov_idle
-                    assets["video_pepe_idle"] = cap_pepe_idle
+                    main_game(player1_choice, player2_choice, assets)
+                    assets["video_lobby"] = cv2.VideoCapture("лобби.mp4")
+                    assets["video_start"] = cv2.VideoCapture("start game.mov")
+                    assets["video_durov_idle"] = cv2.VideoCapture(
+                        "video_durov_idle.mov"
+                    )
+                    assets["video_pepe_idle"] = cv2.VideoCapture("video_pepe_idle.mov")
+                    cap_lobby = assets["video_lobby"]
+                    cap_start = assets["video_start"]
+                    cap_durov_idle = assets["video_durov_idle"]
+                    cap_pepe_idle = assets["video_pepe_idle"]
 
         pygame.display.flip()
         clock.tick(FPS)
