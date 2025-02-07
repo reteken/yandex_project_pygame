@@ -5,6 +5,8 @@ import random
 import time
 import cv2
 import numpy as np
+import json
+from network import NetworkClient  # импортируем наш модуль сетевого клиента
 
 pygame.init()
 SCREEN_WIDTH = 1920
@@ -424,13 +426,10 @@ def shop_screen():
 
 def main_game(player1_choice, player2_choice, assets):
     cap = assets["video"]
-
-    # Загрузить картинку тени и уменьшить её в 2 раза
     shadow_img = pygame.image.load("тень.png").convert_alpha()
     shadow_img = pygame.transform.scale(
         shadow_img, (shadow_img.get_width() // 4, shadow_img.get_height() // 4)
     )
-    # Фиксированная высота тени (на уровне пола)
     fixed_shadow_y = SCREEN_HEIGHT - 100 - (shadow_img.get_height() // 2)
 
     def get_video_frame_surface():
@@ -458,6 +457,13 @@ def main_game(player1_choice, player2_choice, assets):
         "shoot": K_RCTRL,
         "hit": K_LALT,
     }
+
+    from network import NetworkClient
+
+    net_client = assets.get("net_client")
+    if not net_client:
+        net_client = NetworkClient("185.125.231.122", 5000)
+        assets["net_client"] = net_client
 
     class AIPlayerLocal(AIPlayer):
         def __init__(
@@ -671,10 +677,24 @@ def main_game(player1_choice, player2_choice, assets):
 
     while running:
         video_surface = get_video_frame_surface()
-        if video_surface is not None:
+        if video_surface:
             screen.blit(video_surface, (0, 0))
         else:
             screen.fill(WHITE)
+
+        # Отправляем состояние игрока на сервер (онлайн)
+        state = {
+            "player_id": "player1",  # Здесь нужно заменить на уникальный идентификатор
+            "x": player1.rect.x,
+            "y": player1.rect.y,
+            "health": player1.health,
+            "action": "update",
+        }
+        net_client.send(state)
+        while net_client.received_messages:
+            message = net_client.received_messages.pop(0)
+            # Обработка сообщений от сервера: обновление состояний других игроков
+            print("Received:", message)
 
         for event in pygame.event.get():
             if event.type == QUIT:
@@ -731,10 +751,8 @@ def main_game(player1_choice, player2_choice, assets):
                 winner = "DRAW!"
             running = False
 
-        # Рисуем тень с использованием картинки, на фиксированной высоте
         shadow_x1 = player1.rect.centerx - shadow_img.get_width() // 2
         screen.blit(shadow_img, (shadow_x1, fixed_shadow_y))
-
         shadow_x2 = player2.rect.centerx - shadow_img.get_width() // 2
         screen.blit(shadow_img, (shadow_x2, fixed_shadow_y))
 
@@ -757,9 +775,11 @@ def main_menu(assets):
     cap_durov_idle = assets["video_durov_idle"]
     cap_pepe_idle = assets["video_pepe_idle"]
     font = pygame.font.SysFont(None, 74)
+
     shop_button = Button(pygame.Rect(20, 20, 150, 50), BLUE, "Shop", border_color=GRAY)
     player1_choice = "durov"
     player2_choice = "durov"
+
     left_buttons = [
         Button(pygame.Rect(50, 200, 200, 60), BLUE, "Durov", border_color=GRAY),
         Button(pygame.Rect(50, 280, 200, 60), BLUE, "pepe", border_color=GRAY),
@@ -789,32 +809,25 @@ def main_menu(assets):
         border_color=GRAY,
         no_background=True,
     )
+
     running = True
     while running:
         lobby_surf = get_frame_surface(cap_lobby, SCREEN_WIDTH, SCREEN_HEIGHT)
-        if lobby_surf is not None:
+        if lobby_surf:
             screen.blit(lobby_surf, (0, 0))
         else:
             screen.fill(WHITE)
+
         title = font.render("Choose Characters", True, BLACK)
         title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, 100))
         screen.blit(title, title_rect)
+
         p1_font = pygame.font.SysFont(None, 48)
         p1_label = p1_font.render("Player 1", True, BLUE)
         screen.blit(p1_label, (80, 150))
         p2_label = p1_font.render("Player 2", True, RED)
         screen.blit(p2_label, (SCREEN_WIDTH - 250, 150))
-        for btn in left_buttons + right_buttons:
-            btn.draw(screen)
-        start_button.draw(screen)
-        shop_button.draw(screen)
-        start_anim_surf = get_frame_surface(
-            cap_start, start_button.rect.width, start_button.rect.height
-        )
-        if start_anim_surf is not None:
-            sx, sy = start_button.rect.topleft
-            screen.blit(start_anim_surf, (sx, sy))
-        # Отрисовка голограмм idle для Player1
+
         if player1_choice == "durov":
             durov_idle_surf = get_frame_surface(cap_durov_idle, 300, 300)
             if durov_idle_surf:
@@ -823,7 +836,6 @@ def main_menu(assets):
             pepe_idle_surf = get_frame_surface(cap_pepe_idle, 300, 300)
             if pepe_idle_surf:
                 screen.blit(pepe_idle_surf, (50, 120))
-        # Отрисовка голограмм idle для Player2
         if player2_choice == "durov":
             durov_idle_surf = get_frame_surface(cap_durov_idle, 300, 300)
             if durov_idle_surf:
@@ -832,6 +844,20 @@ def main_menu(assets):
             pepe_idle_surf = get_frame_surface(cap_pepe_idle, 300, 300)
             if pepe_idle_surf:
                 screen.blit(pepe_idle_surf, (SCREEN_WIDTH - 350, 120))
+
+        for btn in left_buttons + right_buttons:
+            btn.draw(screen)
+
+        start_button.draw(screen)
+        shop_button.draw(screen)
+
+        start_anim_surf = get_frame_surface(
+            cap_start, start_button.rect.width, start_button.rect.height
+        )
+        if start_anim_surf:
+            sx, sy = start_button.rect.topleft
+            screen.blit(start_anim_surf, (sx, sy))
+
         if player1_choice == "durov":
             pygame.draw.rect(
                 screen,
@@ -880,6 +906,7 @@ def main_menu(assets):
                 3,
                 border_radius=10,
             )
+
         for event in pygame.event.get():
             if event.type == QUIT:
                 cap_lobby.release()
@@ -940,8 +967,9 @@ def main_menu(assets):
                     cap_pepe_idle.set(cv2.CAP_PROP_POS_FRAMES, 0)
                     assets["video_lobby"] = cap_lobby
                     assets["video_start"] = cap_start
-                    assets["video_durov_idle.mp4"] = cap_durov_idle
-                    assets["video_pepe_idle.mp4"] = cap_pepe_idle
+                    assets["video_durov_idle"] = cap_durov_idle
+                    assets["video_pepe_idle"] = cap_pepe_idle
+
         pygame.display.flip()
         clock.tick(FPS)
 
