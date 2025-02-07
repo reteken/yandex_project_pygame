@@ -6,7 +6,7 @@ clients = []
 
 
 def handle_client(client_socket, addr):
-    print(f"New connection: {addr}")
+    print(f"Подключился: {addr}")
     while True:
         try:
             data = client_socket.recv(4096)
@@ -18,12 +18,12 @@ def handle_client(client_socket, addr):
                     message = json.loads(msg)
                     broadcast(message, client_socket)
         except Exception as e:
-            print(f"Error from {addr}: {e}")
+            print(f"Ошибка от {addr}: {e}")
             break
     client_socket.close()
     if client_socket in clients:
         clients.remove(client_socket)
-    print(f"Connection closed: {addr}")
+    print(f"Отключился: {addr}")
 
 
 def broadcast(message, sender):
@@ -32,14 +32,15 @@ def broadcast(message, sender):
             try:
                 client.sendall((json.dumps(message) + "\n").encode("utf-8"))
             except Exception as e:
-                print("Broadcast error:", e)
+                print("Ошибка рассылки:", e)
 
 
 def main():
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # Прослушиваем все интерфейсы на порту 5000
     server.bind(("", 5000))
     server.listen(5)
-    print("Server listening on port 5000")
+    print("Сервер запущен, прослушивание порта 5000")
     while True:
         client_socket, addr = server.accept()
         clients.append(client_socket)

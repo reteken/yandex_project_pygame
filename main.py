@@ -30,6 +30,7 @@ clock = pygame.time.Clock()
 def get_frame_surface(cap, w, h):
     ret, frame = cap.read()
     if not ret:
+        # Если не удалось прочитать кадр, сбрасываем видео и пробуем снова
         cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
         ret, frame = cap.read()
         if not ret:
@@ -250,7 +251,85 @@ class AIPlayer(Player):
     def inputer(
         self, other, keys, controls, bullets_group, bullet_animation_frames, bullet_type
     ):
-        pass
+        self.is_moving = False
+        direction = 1 if other.rect.x > self.rect.x else -1
+        distance = abs(self.rect.centerx - other.rect.centerx)
+        if distance < 180:
+            if random.random() < 0.1:
+                self.rect.x -= self.speed * direction
+                self.is_moving = True
+                if direction == 1 and self.facing_right:
+                    self.flip_images()
+                    self.facing_right = False
+                elif direction == -1 and not self.facing_right:
+                    self.flip_images()
+                    self.facing_right = True
+            else:
+                self.rect.x += self.speed * direction
+                self.is_moving = True
+                if direction == 1 and not self.facing_right:
+                    self.flip_images()
+                    self.facing_right = True
+                elif direction == -1 and self.facing_right:
+                    self.flip_images()
+                    self.facing_right = False
+        elif distance > 800:
+            self.rect.x += self.speed * direction
+            self.is_moving = True
+            if direction == 1 and not self.facing_right:
+                self.flip_images()
+                self.facing_right = True
+            elif direction == -1 and self.facing_right:
+                self.flip_images()
+                self.facing_right = False
+        else:
+            if random.random() < 0.02:
+                step_dir = 1 if random.random() < 0.5 else -1
+                self.rect.x += step_dir * self.speed
+                self.is_moving = True
+                if step_dir == 1 and not self.facing_right:
+                    self.flip_images()
+                    self.facing_right = True
+                elif step_dir == -1 and self.facing_right:
+                    self.flip_images()
+                    self.facing_right = False
+        self.rect.x = max(0, min(self.rect.x, SCREEN_WIDTH - self.rect.width))
+        if self.on_ground and random.random() < 0.03:
+            self.dy = self.jump_speed
+            self.on_ground = False
+            self.is_jumping = True
+        current_time = time.time()
+        if current_time - self.last_shot_time > 0.2:
+            self.last_shot_time = current_time
+            for i in range(3):
+                bullet = Bullet(
+                    self.rect.centerx,
+                    self.rect.centery - 10 + i * 10,
+                    direction,
+                    self,
+                    bullet_animation_frames,
+                    bullet_type,
+                )
+                bullets_group.add(bullet)
+        if distance < 110 and current_time - self.last_hit_time > 1.0:
+            if random.random() < 0.6:
+                self.is_hitting = True
+                self.hit_frame = 0
+                self.last_hit_time = current_time
+                if direction == 1:
+                    self.rect.x += 15
+                else:
+                    self.rect.x -= 15
+                if self.rect.colliderect(other.rect):
+                    other.health -= 10
+        self.rect.x = max(0, min(self.rect.x, SCREEN_WIDTH - self.rect.width))
+        floor_level = SCREEN_HEIGHT - 100
+        if self.rect.bottom >= floor_level:
+            self.rect.bottom = floor_level
+            self.dy = 0
+            self.on_ground = True
+            self.is_jumping = False
+            self.jump_frame = 0
 
 
 def load_image_with_fallback(path, width, height, fallback_color):
@@ -317,51 +396,71 @@ def load_all_assets():
     total_load_steps = 400
     current_progress = 0
     show_loading_screen(current_progress, total_load_steps)
+
     durov_run = load_animation("durov", 20, "дуров бежит")
     current_progress += 20
     show_loading_screen(current_progress, total_load_steps)
+
     durov_jump = load_animation("durov_jump", 49, "durov_jump")
     current_progress += 49
     show_loading_screen(current_progress, total_load_steps)
+
     durov_hit = load_animation("damage_1", 37, "durov_hit")
     current_progress += 37
     show_loading_screen(current_progress, total_load_steps)
+
     durov_idle = create_pepe_animation("waiter_durov", 55, "стойкаааааааааааа")
     current_progress += 55
     show_loading_screen(current_progress, total_load_steps)
+
     pepe_run = create_pepe_animation("pepe_run", 31, "бег пепе")
     current_progress += 31
     show_loading_screen(current_progress, total_load_steps)
+
     pepe_jump = create_pepe_animation("pepe_run", 30, "бег пепе")
     current_progress += 30
     show_loading_screen(current_progress, total_load_steps)
+
     pepe_hit = create_pepe_animation("hit_pepe_1", 28, "удар пепе 1")
     current_progress += 28
     show_loading_screen(current_progress, total_load_steps)
+
     pepe_idle = create_pepe_animation("waiter_pepe", 60, "пепе стойка")
     current_progress += 60
     show_loading_screen(current_progress, total_load_steps)
+
     ton_bullet = load_bullet_animation("ton coin", 155, "ton coin", 45, 45, GRAY)
     current_progress += 155
     show_loading_screen(current_progress, total_load_steps)
+
     pepe_bullet = load_bullet_animation("pepe coin", 155, "пепе пуля", 45, 45, PURPLE)
     current_progress += 155
     show_loading_screen(current_progress, total_load_steps)
+
     main_video = cv2.VideoCapture("поле_1.mp4")
     current_progress += 1
     show_loading_screen(current_progress, total_load_steps)
+
     lobby_video = cv2.VideoCapture("лобби.mp4")
     current_progress += 1
     show_loading_screen(current_progress, total_load_steps)
+
     start_button_video = cv2.VideoCapture("start game.mov")
     current_progress += 1
     show_loading_screen(current_progress, total_load_steps)
-    durov_idle_video = cv2.VideoCapture("дуров стойка галаграмма.mp4")
+
+    durov_idle_video = cv2.VideoCapture("video_durov_idle.mp4")
     current_progress += 1
     show_loading_screen(current_progress, total_load_steps)
-    pepe_idle_video = cv2.VideoCapture("пепе стойка галограмма.mp4")
+
+    pepe_idle_video = cv2.VideoCapture("video_pepe_idle.mp4")
     current_progress += 1
     show_loading_screen(current_progress, total_load_steps)
+
+    ai_image = load_image_with_fallback("AI_name.png", 300, 300, GRAY)
+    current_progress += 1
+    show_loading_screen(current_progress, total_load_steps)
+
     return {
         "durov": {
             "run": durov_run,
@@ -384,6 +483,7 @@ def load_all_assets():
         "video_start": start_button_video,
         "video_durov_idle": durov_idle_video,
         "video_pepe_idle": pepe_idle_video,
+        "ai_image": ai_image,
     }
 
 
@@ -457,13 +557,6 @@ def main_game(player1_choice, player2_choice, assets):
         "shoot": K_RCTRL,
         "hit": K_LALT,
     }
-
-    from network import NetworkClient
-
-    net_client = assets.get("net_client")
-    if not net_client:
-        net_client = NetworkClient("185.125.231.122", 5000)
-        assets["net_client"] = net_client
 
     class AIPlayerLocal(AIPlayer):
         def __init__(
@@ -682,20 +775,6 @@ def main_game(player1_choice, player2_choice, assets):
         else:
             screen.fill(WHITE)
 
-        # Отправляем состояние игрока на сервер (онлайн)
-        state = {
-            "player_id": "player1",  # Здесь нужно заменить на уникальный идентификатор
-            "x": player1.rect.x,
-            "y": player1.rect.y,
-            "health": player1.health,
-            "action": "update",
-        }
-        net_client.send(state)
-        while net_client.received_messages:
-            message = net_client.received_messages.pop(0)
-            # Обработка сообщений от сервера: обновление состояний других игроков
-            print("Received:", message)
-
         for event in pygame.event.get():
             if event.type == QUIT:
                 pygame.quit()
@@ -774,34 +853,15 @@ def main_menu(assets):
     cap_start = assets["video_start"]
     cap_durov_idle = assets["video_durov_idle"]
     cap_pepe_idle = assets["video_pepe_idle"]
+    ai_image = assets["ai_image"]
+
+    cap_lobby.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    cap_start.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
     font = pygame.font.SysFont(None, 74)
+    font_label = pygame.font.SysFont(None, 36)
 
     shop_button = Button(pygame.Rect(20, 20, 150, 50), BLUE, "Shop", border_color=GRAY)
-    player1_choice = "durov"
-    player2_choice = "durov"
-
-    left_buttons = [
-        Button(pygame.Rect(50, 200, 200, 60), BLUE, "Durov", border_color=GRAY),
-        Button(pygame.Rect(50, 280, 200, 60), BLUE, "pepe", border_color=GRAY),
-        Button(pygame.Rect(50, 360, 200, 60), BLUE, "AI", border_color=GRAY),
-    ]
-    right_buttons = [
-        Button(
-            pygame.Rect(SCREEN_WIDTH - 250, 200, 200, 60),
-            RED,
-            "Durov",
-            border_color=GRAY,
-        ),
-        Button(
-            pygame.Rect(SCREEN_WIDTH - 250, 280, 200, 60),
-            RED,
-            "pepe",
-            border_color=GRAY,
-        ),
-        Button(
-            pygame.Rect(SCREEN_WIDTH - 250, 360, 200, 60), RED, "AI", border_color=GRAY
-        ),
-    ]
     start_button = Button(
         pygame.Rect(SCREEN_WIDTH // 2 - 100, SCREEN_HEIGHT - 150, 300, 100),
         GREEN,
@@ -810,8 +870,30 @@ def main_menu(assets):
         no_background=True,
     )
 
+    options = ["durov", "pepe", "ai"]
+    player1_index = 0
+    player2_index = 0
+
+    player1_left_arrow = Button(pygame.Rect(50, 200, 50, 50), BLUE, "<")
+    player1_right_arrow = Button(pygame.Rect(270, 200, 50, 50), BLUE, ">")
+    player2_left_arrow = Button(pygame.Rect(SCREEN_WIDTH - 320, 200, 50, 50), RED, "<")
+    player2_right_arrow = Button(pygame.Rect(SCREEN_WIDTH - 100, 200, 50, 50), RED, ">")
+
     running = True
     while running:
+        if not cap_lobby.isOpened():
+            assets["video_lobby"] = cv2.VideoCapture("лобби.mp4")
+            cap_lobby = assets["video_lobby"]
+        if not cap_start.isOpened():
+            assets["video_start"] = cv2.VideoCapture("start game.mov")
+            cap_start = assets["video_start"]
+        if not cap_durov_idle.isOpened():
+            assets["video_durov_idle"] = cv2.VideoCapture("video_durov_idle.mp4")
+            cap_durov_idle = assets["video_durov_idle"]
+        if not cap_pepe_idle.isOpened():
+            assets["video_pepe_idle"] = cv2.VideoCapture("video_pepe_idle.mp4")
+            cap_pepe_idle = assets["video_pepe_idle"]
+
         lobby_surf = get_frame_surface(cap_lobby, SCREEN_WIDTH, SCREEN_HEIGHT)
         if lobby_surf:
             screen.blit(lobby_surf, (0, 0))
@@ -822,31 +904,68 @@ def main_menu(assets):
         title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, 100))
         screen.blit(title, title_rect)
 
-        p1_font = pygame.font.SysFont(None, 48)
-        p1_label = p1_font.render("Player 1", True, BLUE)
-        screen.blit(p1_label, (80, 150))
-        p2_label = p1_font.render("Player 2", True, RED)
+        p1_label = font_label.render("Player 1", True, BLUE)
+        screen.blit(p1_label, (50, 150))
+        p2_label = font_label.render("Player 2", True, RED)
         screen.blit(p2_label, (SCREEN_WIDTH - 250, 150))
 
-        if player1_choice == "durov":
-            durov_idle_surf = get_frame_surface(cap_durov_idle, 300, 300)
-            if durov_idle_surf:
-                screen.blit(durov_idle_surf, (50, 120))
-        elif player1_choice == "pepe":
-            pepe_idle_surf = get_frame_surface(cap_pepe_idle, 300, 300)
-            if pepe_idle_surf:
-                screen.blit(pepe_idle_surf, (50, 120))
-        if player2_choice == "durov":
-            durov_idle_surf = get_frame_surface(cap_durov_idle, 300, 300)
-            if durov_idle_surf:
-                screen.blit(durov_idle_surf, (SCREEN_WIDTH - 350, 120))
-        elif player2_choice == "pepe":
-            pepe_idle_surf = get_frame_surface(cap_pepe_idle, 300, 300)
-            if pepe_idle_surf:
-                screen.blit(pepe_idle_surf, (SCREEN_WIDTH - 350, 120))
+        player1_left_arrow.draw(screen)
+        player1_right_arrow.draw(screen)
+        p1_choice_text = options[player1_index].upper()
+        p1_choice_surf = font_label.render(p1_choice_text, True, BLACK)
+        p1_label_rect = pygame.Rect(110, 200, 150, 50)
+        pygame.draw.rect(screen, WHITE, p1_label_rect)
+        pygame.draw.rect(screen, GRAY, p1_label_rect, 2)
+        p1_text_rect = p1_choice_surf.get_rect(center=p1_label_rect.center)
+        screen.blit(p1_choice_surf, p1_text_rect)
 
-        for btn in left_buttons + right_buttons:
-            btn.draw(screen)
+        preview_rect1 = pygame.Rect(50, 270, 300, 300)
+        if options[player1_index] == "durov":
+            durov_idle_surf = get_frame_surface(
+                cap_durov_idle, preview_rect1.width, preview_rect1.height
+            )
+            if durov_idle_surf:
+                screen.blit(durov_idle_surf, preview_rect1.topleft)
+        elif options[player1_index] == "pepe":
+            pepe_idle_surf = get_frame_surface(
+                cap_pepe_idle, preview_rect1.width, preview_rect1.height
+            )
+            if pepe_idle_surf:
+                screen.blit(pepe_idle_surf, preview_rect1.topleft)
+        else:
+            ai_img_scaled = pygame.transform.scale(
+                ai_image, (preview_rect1.width, preview_rect1.height)
+            )
+            screen.blit(ai_img_scaled, preview_rect1.topleft)
+
+        player2_left_arrow.draw(screen)
+        player2_right_arrow.draw(screen)
+        p2_choice_text = options[player2_index].upper()
+        p2_choice_surf = font_label.render(p2_choice_text, True, BLACK)
+        p2_label_rect = pygame.Rect(SCREEN_WIDTH - 260, 200, 150, 50)
+        pygame.draw.rect(screen, WHITE, p2_label_rect)
+        pygame.draw.rect(screen, GRAY, p2_label_rect, 2)
+        p2_text_rect = p2_choice_surf.get_rect(center=p2_label_rect.center)
+        screen.blit(p2_choice_surf, p2_text_rect)
+
+        preview_rect2 = pygame.Rect(SCREEN_WIDTH - 350, 270, 300, 300)
+        if options[player2_index] == "durov":
+            durov_idle_surf = get_frame_surface(
+                cap_durov_idle, preview_rect2.width, preview_rect2.height
+            )
+            if durov_idle_surf:
+                screen.blit(durov_idle_surf, preview_rect2.topleft)
+        elif options[player2_index] == "pepe":
+            pepe_idle_surf = get_frame_surface(
+                cap_pepe_idle, preview_rect2.width, preview_rect2.height
+            )
+            if pepe_idle_surf:
+                screen.blit(pepe_idle_surf, preview_rect2.topleft)
+        else:
+            ai_img_scaled = pygame.transform.scale(
+                ai_image, (preview_rect2.width, preview_rect2.height)
+            )
+            screen.blit(ai_img_scaled, preview_rect2.topleft)
 
         start_button.draw(screen)
         shop_button.draw(screen)
@@ -857,55 +976,6 @@ def main_menu(assets):
         if start_anim_surf:
             sx, sy = start_button.rect.topleft
             screen.blit(start_anim_surf, (sx, sy))
-
-        if player1_choice == "durov":
-            pygame.draw.rect(
-                screen,
-                YELLOW,
-                left_buttons[0].rect.inflate(10, 10),
-                3,
-                border_radius=10,
-            )
-        elif player1_choice == "pepe":
-            pygame.draw.rect(
-                screen,
-                YELLOW,
-                left_buttons[1].rect.inflate(10, 10),
-                3,
-                border_radius=10,
-            )
-        else:
-            pygame.draw.rect(
-                screen,
-                YELLOW,
-                left_buttons[2].rect.inflate(10, 10),
-                3,
-                border_radius=10,
-            )
-        if player2_choice == "durov":
-            pygame.draw.rect(
-                screen,
-                YELLOW,
-                right_buttons[0].rect.inflate(10, 10),
-                3,
-                border_radius=10,
-            )
-        elif player2_choice == "pepe":
-            pygame.draw.rect(
-                screen,
-                YELLOW,
-                right_buttons[1].rect.inflate(10, 10),
-                3,
-                border_radius=10,
-            )
-        else:
-            pygame.draw.rect(
-                screen,
-                YELLOW,
-                right_buttons[2].rect.inflate(10, 10),
-                3,
-                border_radius=10,
-            )
 
         for event in pygame.event.get():
             if event.type == QUIT:
@@ -919,56 +989,36 @@ def main_menu(assets):
                 pos = pygame.mouse.get_pos()
                 if shop_button.is_clicked(pos):
                     shop_screen()
-                    cap_lobby.release()
-                    cap_start.release()
-                    cap_durov_idle.release()
-                    cap_pepe_idle.release()
-                    cap_lobby = cv2.VideoCapture("лобби.mp4")
                     cap_lobby.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    cap_start = cv2.VideoCapture("start game.mov")
                     cap_start.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    cap_durov_idle = cv2.VideoCapture("дуров стойка галаграмма.mp4")
-                    cap_durov_idle.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    cap_pepe_idle = cv2.VideoCapture("пепе стойка галограмма.mp4")
-                    cap_pepe_idle.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    assets["video_lobby"] = cap_lobby
-                    assets["video_start"] = cap_start
-                    assets["video_durov_idle"] = cap_durov_idle
-                    assets["video_pepe_idle"] = cap_pepe_idle
-                for i, btn in enumerate(left_buttons):
-                    if btn.is_clicked(pos):
-                        if i == 0:
-                            player1_choice = "durov"
-                        elif i == 1:
-                            player1_choice = "pepe"
-                        elif i == 2:
-                            player1_choice = "ai"
-                for i, btn in enumerate(right_buttons):
-                    if btn.is_clicked(pos):
-                        if i == 0:
-                            player2_choice = "durov"
-                        elif i == 1:
-                            player2_choice = "pepe"
-                        elif i == 2:
-                            player2_choice = "ai"
+                if player1_left_arrow.is_clicked(pos):
+                    player1_index = (player1_index - 1) % len(options)
+                if player1_right_arrow.is_clicked(pos):
+                    player1_index = (player1_index + 1) % len(options)
+                if player2_left_arrow.is_clicked(pos):
+                    player2_index = (player2_index - 1) % len(options)
+                if player2_right_arrow.is_clicked(pos):
+                    player2_index = (player2_index + 1) % len(options)
                 if start_button.is_clicked(pos):
+                    cap_lobby.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    cap_start.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    player1_choice = options[player1_index]
+                    player2_choice = options[player2_index]
                     cap_lobby.release()
                     cap_start.release()
                     cap_durov_idle.release()
                     cap_pepe_idle.release()
                     main_game(player1_choice, player2_choice, assets)
-                    cap_lobby = cv2.VideoCapture("лобби.mp4")
-                    cap_lobby.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    cap_start = cv2.VideoCapture("start game.mov")
-                    cap_start.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    cap_durov_idle = cv2.VideoCapture("дуров стойка галаграмма.mp4")
-                    cap_durov_idle.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    cap_pepe_idle = cv2.VideoCapture("пепе стойка галограмма.mp4")
-                    cap_pepe_idle.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    assets["video_lobby"] = cap_lobby
-                    assets["video_start"] = cap_start
-                    assets["video_durov_idle"] = cap_durov_idle
-                    assets["video_pepe_idle"] = cap_pepe_idle
+                    assets["video_lobby"] = cv2.VideoCapture("лобби.mp4")
+                    assets["video_start"] = cv2.VideoCapture("start game.mov")
+                    assets["video_durov_idle"] = cv2.VideoCapture(
+                        "video_durov_idle.mp4"
+                    )
+                    assets["video_pepe_idle"] = cv2.VideoCapture("video_pepe_idle.mp4")
+                    cap_lobby = assets["video_lobby"]
+                    cap_start = assets["video_start"]
+                    cap_durov_idle = assets["video_durov_idle"]
+                    cap_pepe_idle = assets["video_pepe_idle"]
 
         pygame.display.flip()
         clock.tick(FPS)
