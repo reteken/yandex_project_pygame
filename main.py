@@ -31,6 +31,12 @@ screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("Dmitriy Combat 2D")
 clock = pygame.time.Clock()
 
+
+# Вспомогательная функция для создания шрифта из файла "MKX Title.ttf" для текста Pygame
+def get_font(size):
+    return pygame.font.Font("MKX Title.ttf", size)
+
+
 #############################################
 # SQL-интеграция и функции аутентификации  #
 #############################################
@@ -110,6 +116,12 @@ def update_stats(winner_login, loser_login):
 
 
 def get_passwords_for_players():
+    """
+    Открывает окна аутентификации для двух игроков.
+    Для этих окон не используется кастомный шрифт (MKX Title.ttf),
+    применяется системный шрифт по умолчанию.
+    Изменения: каждое окно масштабируется до размера 600x400 (примерно 1.5 раза больше).
+    """
     creds = {}
     root = tk.Tk()
     root.title("Authentication")
@@ -118,17 +130,18 @@ def get_passwords_for_players():
     def create_window(player_number):
         win = tk.Toplevel(root)
         win.title(f"Player {player_number} Authentication")
-        tk.Label(
-            win, text=f"Player {player_number} Authentication", font=("Arial", 16)
-        ).pack(pady=10)
+        # Увеличиваем окно до размера 600x400
+        win.geometry("250x300")
+        # Здесь для виджетов используется системный шрифт по умолчанию
+        tk.Label(win, text=f"Player {player_number} Authentication").pack(pady=10)
         mode_var = tk.StringVar(value="login")
         tk.Radiobutton(win, text="Login", variable=mode_var, value="login").pack()
         tk.Radiobutton(win, text="Register", variable=mode_var, value="register").pack()
-        tk.Label(win, text="Login:", font=("Arial", 12)).pack(pady=(10, 0))
-        login_entry = tk.Entry(win, font=("Arial", 12))
+        tk.Label(win, text="Login:").pack(pady=(10, 0))
+        login_entry = tk.Entry(win)
         login_entry.pack(pady=5)
-        tk.Label(win, text="Password:", font=("Arial", 12)).pack(pady=(10, 0))
-        password_entry = tk.Entry(win, show="*", font=("Arial", 12))
+        tk.Label(win, text="Password:").pack(pady=(10, 0))
+        password_entry = tk.Entry(win, show="*")
         password_entry.pack(pady=5)
 
         def submit():
@@ -150,7 +163,7 @@ def get_passwords_for_players():
             creds[player_number] = user_login
             win.destroy()
 
-        tk.Button(win, text="Submit", command=submit, font=("Arial", 12)).pack(pady=10)
+        tk.Button(win, text="Submit", command=submit).pack(pady=10)
 
     create_window(1)
     create_window(2)
@@ -193,7 +206,7 @@ class Button:
         self.text = text
         self.text_color = text_color
         self.border_color = border_color
-        self.font = pygame.font.SysFont(None, 36)
+        self.font = get_font(36)
         self.no_background = no_background
 
     def draw(self, surface):
@@ -393,7 +406,7 @@ class Player(pygame.sprite.Sprite):
             frame_w = frame.get_width()
             frame_h = frame.get_height()
             new_x = x - (frame_w - bar_width) // 2
-            # Смещаем XP-бар на 30 пикселей вниз:
+            # Смещаем XP-бар на 30 пикселей вниз (относительно позиции HP-полосы)
             new_y = y - (frame_h - bar_height) // 2 + 40
             screen.blit(frame, (new_x, new_y))
 
@@ -525,7 +538,7 @@ def load_bullet_animation(
 
 def show_loading_screen(progress, total):
     screen.fill(BLACK)
-    font = pygame.font.SysFont(None, 74)
+    font = get_font(74)
     loading_text = font.render("Loading...", True, WHITE)
     loading_rect = loading_text.get_rect(
         center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 50)
@@ -598,7 +611,7 @@ def load_all_assets():
     current_progress += 1
     show_loading_screen(current_progress, total_load_steps)
 
-    start_game_anim = create_pepe_animation("start game", 65, "start game", 472, 100)
+    start_game_anim = create_pepe_animation("start game", 65, "start game", 600, 120)
     current_progress += 65
     show_loading_screen(current_progress, total_load_steps)
 
@@ -874,7 +887,7 @@ def main_game(player1_choice, player2_choice, assets, player_logins):
             elapsed = time.time() - round_start_time
             remaining = round_duration - elapsed
             info_text = f"Time: {int(remaining)}   Score: P1 {score1} - {score2} P2   Round: {round_number}"
-            info_surf = pygame.font.SysFont(None, 50).render(info_text, True, YELLOW)
+            info_surf = get_font(50).render(info_text, True, YELLOW)
             info_rect = info_surf.get_rect(center=(SCREEN_WIDTH // 2, 50))
             screen.blit(info_surf, info_rect)
 
@@ -934,11 +947,12 @@ def main_game(player1_choice, player2_choice, assets, player_logins):
             all_sprites.draw(screen)
             bullets.draw(screen)
 
-            # Отрисовка HP-полос и XP-баров. HP-полоса рисуется с координатой y = 40 (на 30 пикселей ниже предыдущей позиции)
-            player1.draw_health_bar(screen, 55, 40)
-            player2.draw_health_bar(screen, SCREEN_WIDTH - 355, 40)
+            # Сдвигаем левую зеленую полоску жизней на 15 пикселей влево (x: 55 -> 40)
+            # и правую зеленую полоску жизней на 15 пикселей влево (x: SCREEN_WIDTH - 355 -> SCREEN_WIDTH - 370)
+            player1.draw_health_bar(screen, 40, 40)
+            player2.draw_health_bar(screen, SCREEN_WIDTH - 370, 40)
 
-            login_font = pygame.font.SysFont(None, 36)
+            login_font = get_font(36)
             p1_login_text = login_font.render(player_logins["player1"], True, WHITE)
             p2_login_text = login_font.render(player_logins["player2"], True, WHITE)
             screen.blit(p1_login_text, (10, 10))
@@ -966,7 +980,7 @@ def main_game(player1_choice, player2_choice, assets, player_logins):
                 round_winner = "Draw"
 
         result_text = f"Round {round_number} Result: {round_winner}"
-        result_surf = pygame.font.SysFont(None, 74).render(result_text, True, YELLOW)
+        result_surf = get_font(74).render(result_text, True, YELLOW)
         result_rect = result_surf.get_rect(
             center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
         )
@@ -985,7 +999,7 @@ def main_game(player1_choice, player2_choice, assets, player_logins):
         update_stats(player_logins["player2"], player_logins["player1"])
     else:
         final_text = "MATCH DRAW!"
-    final_surf = pygame.font.SysFont(None, 74).render(final_text, True, YELLOW)
+    final_surf = get_font(74).render(final_text, True, YELLOW)
     final_rect = final_surf.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
     overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
     overlay.fill((0, 0, 0, 180))
@@ -1029,8 +1043,8 @@ def main_menu(assets, player_logins):
 
     start_game_anim_start = time.time()
 
-    font = pygame.font.SysFont(None, 74)
-    font_label = pygame.font.SysFont(None, 36)
+    font = get_font(74)
+    font_label = get_font(36)
 
     shop_button = Button(pygame.Rect(20, 20, 150, 50), BLUE, "Shop")
     start_button = Button(
@@ -1170,7 +1184,7 @@ def main_menu(assets, player_logins):
         )
         screen.blit(scaled_anim_frame, start_button.rect.topleft)
 
-        login_font = pygame.font.SysFont(None, 36)
+        login_font = get_font(36)
         p1_login_text = login_font.render(player_logins["player1"], True, WHITE)
         p2_login_text = login_font.render(player_logins["player2"], True, WHITE)
         screen.blit(
