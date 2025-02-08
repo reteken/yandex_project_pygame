@@ -123,8 +123,8 @@ class Player(pygame.sprite.Sprite):
         self.mask = pygame.mask.from_surface(self.image)
         self.health = 100
         self.speed = 10
-        self.jump_speed = -15
-        self.gravity = 0.8
+        self.jump_speed = -25
+        self.gravity = 0.85
         self.dy = 0
         self.on_ground = False
         self.is_moving = False
@@ -185,7 +185,7 @@ class Player(pygame.sprite.Sprite):
         if keys[controls["shoot"]] and current_time - self.last_shot_time > 1:
             self.last_shot_time = current_time
             direction = 1 if self.rect.x < other.rect.x else -1
-            for i in range(1):
+            for i in range(3):
                 bullet = Bullet(
                     self.rect.centerx,
                     self.rect.centery - 10 + i * 10,
@@ -243,8 +243,29 @@ class Player(pygame.sprite.Sprite):
         self.gravity_helper()
 
     def draw_health_bar(self, screen, x, y):
-        pygame.draw.rect(screen, RED, (x, y, 100, 10))
-        pygame.draw.rect(screen, GREEN, (x, y, self.health, 10))
+        bar_width = 200
+        bar_height = 20
+
+        # Рисуем фон HP-бар (красный)
+        pygame.draw.rect(screen, RED, (x, y, bar_width, bar_height))
+
+        # Вычисляем отношение оставшегося здоровья (от 0 до 1)
+        ratio = self.health / 100.0
+
+        # Интерполируем цвет: при 100% здоровья – зеленый (0,255,0), при 0% – красный (255,0,0)
+        health_color = (0, 255, 0)
+
+        current_health_width = ratio * bar_width
+        pygame.draw.rect(screen, health_color, (x, y, current_health_width, bar_height))
+
+        # Если у игрока установлена XP-рамка (PNG-окоемка), выводим её, центрируя относительно HP-бар
+        if hasattr(self, "xp_frame") and self.xp_frame is not None:
+            frame = self.xp_frame
+            frame_w = frame.get_width()
+            frame_h = frame.get_height()
+            new_x = x - (frame_w - bar_width) // 2
+            new_y = y - (frame_h - bar_height) // 2
+            screen.blit(frame, (new_x, new_y))
 
 
 class AIPlayer(Player):
@@ -361,7 +382,7 @@ def create_pepe_animation(folder, frame_count, prefix, width=350, height=350):
 
 
 def load_bullet_animation(
-    folder, frame_count, prefix, width=200, height=200, color=GRAY
+    folder, frame_count, prefix, width=300, height=150, color=GRAY
 ):
     frames = []
     for i in range(frame_count):
@@ -395,8 +416,7 @@ def show_loading_screen(progress, total):
 
 
 def load_all_assets():
-    # Общее число шагов загрузки (значение можно откорректировать)
-    total_load_steps = 704
+    total_load_steps = 800
     current_progress = 0
     show_loading_screen(current_progress, total_load_steps)
 
@@ -432,12 +452,12 @@ def load_all_assets():
     current_progress += 60
     show_loading_screen(current_progress, total_load_steps)
 
-    # Увеличенные анимации пуль (90x90)
-    ton_bullet = load_bullet_animation("ton coin", 155, "ton coin", 90, 90, GRAY)
+    # Увеличенные анимации пуль (150x75)
+    ton_bullet = load_bullet_animation("ton coin", 155, "ton coin", 150, 75, GRAY)
     current_progress += 155
     show_loading_screen(current_progress, total_load_steps)
 
-    pepe_bullet = load_bullet_animation("pepe coin", 155, "пепе пуля", 90, 90, PURPLE)
+    pepe_bullet = load_bullet_animation("pepe coin", 155, "пепе пуля", 150, 75, PURPLE)
     current_progress += 155
     show_loading_screen(current_progress, total_load_steps)
 
@@ -449,7 +469,7 @@ def load_all_assets():
     current_progress += 1
     show_loading_screen(current_progress, total_load_steps)
 
-    start_game_anim = create_pepe_animation("start game", 65, "start game", 300, 100)
+    start_game_anim = create_pepe_animation("start game", 65, "start game", 472, 100)
     current_progress += 65
     show_loading_screen(current_progress, total_load_steps)
 
@@ -477,6 +497,29 @@ def load_all_assets():
     current_progress += 47
     show_loading_screen(current_progress, total_load_steps)
 
+    changer_img = load_image_with_fallback("changer.png", 50, 50, GRAY)
+    current_progress += 1
+    show_loading_screen(current_progress, total_load_steps)
+
+    # Загрузка XP баров (рамок для HP-бара) из папки XP bars.
+    xp_left_durov = load_image_with_fallback("XP bars/левый_дуров.png", 400, 100, GRAY)
+    current_progress += 1
+    show_loading_screen(current_progress, total_load_steps)
+
+    xp_right_durov = load_image_with_fallback(
+        "XP bars/правый_дуров.png", 400, 100, GRAY
+    )
+    current_progress += 1
+    show_loading_screen(current_progress, total_load_steps)
+
+    xp_left_pepe = load_image_with_fallback("XP bars/левый_пепе.png", 400, 100, GRAY)
+    current_progress += 1
+    show_loading_screen(current_progress, total_load_steps)
+
+    xp_right_pepe = load_image_with_fallback("XP bars/правый_пепе.png", 400, 100, GRAY)
+    current_progress += 1
+    show_loading_screen(current_progress, total_load_steps)
+
     return {
         "durov": {
             "run": durov_run,
@@ -502,6 +545,11 @@ def load_all_assets():
         "right_glow": right_glow,
         "matrix_durov": matrix_durov,
         "matrix_pepe": matrix_pepe,
+        "changer": changer_img,
+        "xp_left_durov": xp_left_durov,
+        "xp_right_durov": xp_right_durov,
+        "xp_left_pepe": xp_left_pepe,
+        "xp_right_pepe": xp_right_pepe,
     }
 
 
@@ -544,27 +592,109 @@ def shop_screen():
 
 class AIPlayerLocal(Player):
     def inputer(
-        self,
-        other,
-        keys,
-        controls,
-        bullets_group,
-        bullet_animation_frames,
-        bullet_type,
+        self, other, keys, controls, bullets_group, bullet_animation_frames, bullet_type
     ):
-        pass
+        # "Умный" AI: анализ расстояния до противника, корректировка дистанции,
+        # выбор действий (движение, прыжок, стрельба, удар).
+        self.is_moving = False
+        current_time = time.time()
+        dx = other.rect.centerx - self.rect.centerx
+        distance = abs(dx)
+
+        # Оптимальные границы дистанции (в пикселях)
+        optimal_min = 200
+        optimal_max = 400
+        move_speed = self.speed
+
+        # Если противник слишком далеко – приближаемся
+        if distance > optimal_max:
+            if dx > 0:
+                self.rect.x += move_speed
+                if not self.facing_right:
+                    self.facing_right = True
+                    self.flip_images()
+            else:
+                self.rect.x -= move_speed
+                if self.facing_right:
+                    self.facing_right = False
+                    self.flip_images()
+            self.is_moving = True
+
+        # Если противник слишком близко – отступаем
+        elif distance < optimal_min:
+            if dx > 0:
+                self.rect.x -= move_speed
+                if self.facing_right:
+                    self.facing_right = False
+                    self.flip_images()
+            else:
+                self.rect.x += move_speed
+                if not self.facing_right:
+                    self.facing_right = True
+                    self.flip_images()
+            self.is_moving = True
+
+        # Если дистанция в оптимальном диапазоне – небольшое случайное движение
+        else:
+            if random.random() < 0.1:
+                step = random.choice([-move_speed, move_speed])
+                self.rect.x += step
+                self.is_moving = True
+                if step > 0 and not self.facing_right:
+                    self.facing_right = True
+                    self.flip_images()
+                elif step < 0 and self.facing_right:
+                    self.facing_right = False
+                    self.flip_images()
+
+        # Периодический прыжок, если на земле
+        if self.on_ground and random.random() < 0.02:
+            self.dy = self.jump_speed
+            self.on_ground = False
+            self.is_jumping = True
+
+        # Если противник в оптимальном диапазоне – стреляем
+        shoot_cooldown = 0.5
+        if (
+            optimal_min <= distance <= optimal_max
+            and (current_time - self.last_shot_time) > shoot_cooldown
+        ):
+            self.last_shot_time = current_time
+            # Направление для пули определяется относительно позиции противника
+            direction = 1 if self.rect.x < other.rect.x else -1
+            for i in range(3):
+                bullet = Bullet(
+                    self.rect.centerx,
+                    self.rect.centery - 10 + i * 10,
+                    direction,
+                    self,
+                    bullet_animation_frames,
+                    bullet_type,
+                )
+                bullets_group.add(bullet)
+
+        # Если очень близко – выполняем удар (хит)
+        hit_cooldown = 0.5
+        if distance < 100 and (current_time - self.last_hit_time) > hit_cooldown:
+            self.is_hitting = True
+            self.hit_frame = 0
+            self.last_hit_time = current_time
+            # Небольшое движение для симуляции удара
+            if dx > 0:
+                self.rect.x += 10
+            else:
+                self.rect.x -= 10
+            if self.rect.colliderect(other.rect):
+                other.health -= 15
 
 
 def main_game(player1_choice, player2_choice, assets):
-    # Игра проходит в раундах до 2 побед одного из игроков.
     score1 = 0
     score2 = 0
     round_number = 0
 
-    # Внешний цикл матча (до 2 побед)
     while score1 < 2 and score2 < 2:
         round_number += 1
-        # Сбрасываем фоновое видео (поле) для нового раунда
         assets["video"].set(cv2.CAP_PROP_POS_FRAMES, 0)
         shadow_img = pygame.image.load("тень.png").convert_alpha()
         shadow_img = pygame.transform.scale(
@@ -583,7 +713,6 @@ def main_game(player1_choice, player2_choice, assets):
             frame = cv2.resize(frame, (SCREEN_WIDTH, SCREEN_HEIGHT))
             return pygame.surfarray.make_surface(np.transpose(frame, (1, 0, 2)))
 
-        # Определяем контролы
         player1_controls = {
             "left": K_a,
             "right": K_d,
@@ -599,7 +728,6 @@ def main_game(player1_choice, player2_choice, assets):
             "hit": K_LALT,
         }
 
-        # Инициализация анимаций игроков в зависимости от выбора
         if player1_choice == "durov":
             p1_run_frames = assets["durov"]["run"]
             p1_jump_frames = assets["durov"]["jump"]
@@ -638,7 +766,6 @@ def main_game(player1_choice, player2_choice, assets):
             p2_idle_frames = assets["durov"]["idle"]
             p2_is_pepe = False
 
-        # Используем увеличенные анимации пуль (90x90)
         p1_bullet_frames = (
             assets["bullets"]["pepe"] if p1_is_pepe else assets["bullets"]["ton"]
         )
@@ -648,7 +775,6 @@ def main_game(player1_choice, player2_choice, assets):
         p1_bullet_type = "pepe" if p1_is_pepe else "ton"
         p2_bullet_type = "pepe" if p2_is_pepe else "ton"
 
-        # Создаем игроков (если выбран AI, то используем AIPlayerLocal)
         if player1_choice == "ai":
             player1 = AIPlayerLocal(
                 100,
@@ -691,11 +817,22 @@ def main_game(player1_choice, player2_choice, assets):
                 is_pepe=p2_is_pepe,
             )
 
+        # Присваиваем XP рамки (окоемки) для HP-бара:
+        if p1_is_pepe:
+            player1.xp_frame = assets["xp_left_pepe"]
+        else:
+            player1.xp_frame = assets["xp_left_durov"]
+
+        if p2_is_pepe:
+            player2.xp_frame = assets["xp_right_pepe"]
+        else:
+            player2.xp_frame = assets["xp_right_durov"]
+
         all_sprites = pygame.sprite.Group()
         all_sprites.add(player1, player2)
         bullets = pygame.sprite.Group()
 
-        round_duration = 60  # длительность раунда в секундах
+        round_duration = 60
         round_start_time = time.time()
         running_round = True
 
@@ -769,13 +906,15 @@ def main_game(player1_choice, player2_choice, assets):
             all_sprites.draw(screen)
             bullets.draw(screen)
 
-            player1.draw_health_bar(screen, 50, 50)
-            player2.draw_health_bar(screen, SCREEN_WIDTH - 150, 50)
+            # Изменённое позиционирование HP-баров:
+            # Для персонажа 1 – отступ от левого края 100 пикселей (x=100)
+            player1.draw_health_bar(screen, 100, 40)
+            # Для персонажа 2 – отступ от правого края 100 пикселей (x = SCREEN_WIDTH - 300 - 100 = SCREEN_WIDTH - 400)
+            player2.draw_health_bar(screen, SCREEN_WIDTH - 400, 40)
 
             pygame.display.flip()
             clock.tick(FPS)
 
-        # Определяем победителя раунда
         if player1.health <= 0 and player2.health > 0:
             round_winner = "Player 2"
             score2 += 1
@@ -804,7 +943,6 @@ def main_game(player1_choice, player2_choice, assets):
         pygame.display.flip()
         pygame.time.wait(2000)
 
-    # После матча определяем финального победителя
     if score1 > score2:
         final_text = "Player 1 WINS the match!"
     elif score2 > score1:
@@ -847,7 +985,7 @@ def main_menu(assets):
 
     left_glow_time = 0
     right_glow_time = 0
-    glow_duration = 1.0  # секунд
+    glow_duration = 1.0
     left_glow_frames = assets["left_glow"]
     right_glow_frames = assets["right_glow"]
 
@@ -859,12 +997,12 @@ def main_menu(assets):
     font = pygame.font.SysFont(None, 74)
     font_label = pygame.font.SysFont(None, 36)
 
-    shop_button = Button(pygame.Rect(20, 20, 150, 50), BLUE, "Shop", border_color=GRAY)
+    shop_button = Button(pygame.Rect(20, 20, 150, 50), BLUE, "Shop")
+    # Изменено: увеличиваем кнопку "Start Game" по вертикали (высота с 100 до 200), ширина (300) остаётся неизменной.
     start_button = Button(
-        pygame.Rect(SCREEN_WIDTH // 2 - 100, SCREEN_HEIGHT - 150, 300, 100),
+        pygame.Rect(SCREEN_WIDTH // 2 - 150, SCREEN_HEIGHT - 100, 500, 150),
         GREEN,
         "Start Game",
-        border_color=GRAY,
         no_background=True,
     )
 
@@ -872,10 +1010,39 @@ def main_menu(assets):
     player1_index = 0
     player2_index = 0
 
-    player1_left_arrow = Button(pygame.Rect(50, 200, 50, 50), BLUE, "<")
-    player1_right_arrow = Button(pygame.Rect(270, 200, 50, 50), BLUE, ">")
-    player2_left_arrow = Button(pygame.Rect(SCREEN_WIDTH - 320, 200, 50, 50), RED, "<")
-    player2_right_arrow = Button(pygame.Rect(SCREEN_WIDTH - 100, 200, 50, 50), RED, ">")
+    # Определяем прямоугольники превью для игроков.
+    preview_rect1 = pygame.Rect(325, 600, 350, 350)
+    preview_rect2 = pygame.Rect(SCREEN_WIDTH - 525, 600, 350, 350)
+
+    arrow_width, arrow_height = 50, 50
+    left_arrow_img = pygame.transform.flip(assets["changer"], True, False)
+    right_arrow_img = assets["changer"]
+
+    margin = 10
+    p1_left_arrow_rect = pygame.Rect(
+        preview_rect1.left - arrow_width - margin,
+        preview_rect1.top + (preview_rect1.height - arrow_height) // 2,
+        arrow_width,
+        arrow_height,
+    )
+    p1_right_arrow_rect = pygame.Rect(
+        preview_rect1.right + margin,
+        preview_rect1.top + (preview_rect1.height - arrow_height) // 2,
+        arrow_width,
+        arrow_height,
+    )
+    p2_left_arrow_rect = pygame.Rect(
+        preview_rect2.left - arrow_width - margin,
+        preview_rect2.top + (preview_rect2.height - arrow_height) // 2,
+        arrow_width,
+        arrow_height,
+    )
+    p2_right_arrow_rect = pygame.Rect(
+        preview_rect2.right + margin,
+        preview_rect2.top + (preview_rect2.height - arrow_height) // 2,
+        arrow_width,
+        arrow_height,
+    )
 
     while True:
         if not cap_lobby.isOpened():
@@ -888,22 +1055,7 @@ def main_menu(assets):
         else:
             screen.fill(WHITE)
 
-        p1_label = font_label.render("Player 1", True, BLUE)
-        screen.blit(p1_label, (50, 150))
-        p2_label = font_label.render("Player 2", True, RED)
-        screen.blit(p2_label, (SCREEN_WIDTH - 250, 150))
-
-        player1_left_arrow.draw(screen)
-        player1_right_arrow.draw(screen)
-        p1_choice_text = options[player1_index].upper()
-        p1_choice_surf = font_label.render(p1_choice_text, True, BLACK)
-        p1_label_rect = pygame.Rect(110, 200, 150, 50)
-        pygame.draw.rect(screen, WHITE, p1_label_rect)
-        pygame.draw.rect(screen, GRAY, p1_label_rect, 2)
-        p1_text_rect = p1_choice_surf.get_rect(center=p1_label_rect.center)
-        screen.blit(p1_choice_surf, p1_text_rect)
-
-        preview_rect1 = pygame.Rect(300, 600, 350, 350)
+        # Отрисовка превью для Player 1 (без зеркалирования)
         if options[player1_index] == "ai":
             ai_img_scaled = pygame.transform.scale(
                 ai_image, (preview_rect1.width, preview_rect1.height)
@@ -922,31 +1074,8 @@ def main_menu(assets):
             )
             screen.blit(scaled_matrix, preview_rect1.topleft)
 
-        current_time = time.time()
-        if current_time - left_glow_time < glow_duration:
-            frame_index = int(
-                ((current_time - left_glow_time) / glow_duration)
-                * len(left_glow_frames)
-            )
-            if frame_index >= len(left_glow_frames):
-                frame_index = len(left_glow_frames) - 1
-            glow_frame = left_glow_frames[frame_index]
-            scaled_glow = pygame.transform.scale(
-                glow_frame, (SCREEN_WIDTH, SCREEN_HEIGHT)
-            )
-            screen.blit(scaled_glow, (0, 0))
-
-        player2_left_arrow.draw(screen)
-        player2_right_arrow.draw(screen)
-        p2_choice_text = options[player2_index].upper()
-        p2_choice_surf = font_label.render(p2_choice_text, True, BLACK)
-        p2_label_rect = pygame.Rect(SCREEN_WIDTH - 260, 200, 150, 50)
-        pygame.draw.rect(screen, WHITE, p2_label_rect)
-        pygame.draw.rect(screen, GRAY, p2_label_rect, 2)
-        p2_text_rect = p2_choice_surf.get_rect(center=p2_label_rect.center)
-        screen.blit(p2_choice_surf, p2_text_rect)
-
-        preview_rect2 = pygame.Rect(SCREEN_WIDTH - 500, 600, 350, 350)
+        # Отрисовка превью для Player 2:
+        # Если выбран вариант "ai" – отрисовываем без изменений, иначе зеркалим матричную анимацию.
         if options[player2_index] == "ai":
             ai_img_scaled = pygame.transform.scale(
                 ai_image, (preview_rect2.width, preview_rect2.height)
@@ -960,11 +1089,27 @@ def main_menu(assets):
             frame_index = int(
                 ((time.time() - right_matrix_time) * 10) % len(matrix_frames)
             )
+            # Зеркалим выбранный кадр по горизонтали:
+            frame = matrix_frames[frame_index]
+            flipped_frame = pygame.transform.flip(frame, True, False)
             scaled_matrix = pygame.transform.scale(
-                matrix_frames[frame_index], (preview_rect2.width, preview_rect2.height)
+                flipped_frame, (preview_rect2.width, preview_rect2.height)
             )
             screen.blit(scaled_matrix, preview_rect2.topleft)
 
+        current_time = time.time()
+        if current_time - left_glow_time < glow_duration:
+            frame_index = int(
+                ((current_time - left_glow_time) / glow_duration)
+                * len(left_glow_frames)
+            )
+            if frame_index >= len(left_glow_frames):
+                frame_index = len(left_glow_frames) - 1
+            glow_frame = left_glow_frames[frame_index]
+            scaled_glow = pygame.transform.scale(
+                glow_frame, (SCREEN_WIDTH, SCREEN_HEIGHT)
+            )
+            screen.blit(scaled_glow, (0, 0))
         if current_time - right_glow_time < glow_duration:
             frame_index = int(
                 ((current_time - right_glow_time) / glow_duration)
@@ -977,6 +1122,11 @@ def main_menu(assets):
                 glow_frame, (SCREEN_WIDTH, SCREEN_HEIGHT)
             )
             screen.blit(scaled_glow, (0, 0))
+
+        screen.blit(left_arrow_img, p1_left_arrow_rect)
+        screen.blit(right_arrow_img, p1_right_arrow_rect)
+        screen.blit(left_arrow_img, p2_left_arrow_rect)
+        screen.blit(right_arrow_img, p2_right_arrow_rect)
 
         shop_button.draw(screen)
 
@@ -996,25 +1146,25 @@ def main_menu(assets):
                 sys.exit()
             if event.type == MOUSEBUTTONDOWN and event.button == 1:
                 pos = pygame.mouse.get_pos()
-                if shop_button.is_clicked(pos):
-                    shop_screen()
-                    cap_lobby.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                if player1_left_arrow.is_clicked(pos):
+                if p1_left_arrow_rect.collidepoint(pos):
                     player1_index = (player1_index - 1) % len(options)
                     left_glow_time = time.time()
                     left_matrix_time = time.time()
-                if player1_right_arrow.is_clicked(pos):
+                elif p1_right_arrow_rect.collidepoint(pos):
                     player1_index = (player1_index + 1) % len(options)
                     left_glow_time = time.time()
                     left_matrix_time = time.time()
-                if player2_left_arrow.is_clicked(pos):
+                if p2_left_arrow_rect.collidepoint(pos):
                     player2_index = (player2_index - 1) % len(options)
                     right_glow_time = time.time()
                     right_matrix_time = time.time()
-                if player2_right_arrow.is_clicked(pos):
+                elif p2_right_arrow_rect.collidepoint(pos):
                     player2_index = (player2_index + 1) % len(options)
                     right_glow_time = time.time()
                     right_matrix_time = time.time()
+                if shop_button.is_clicked(pos):
+                    shop_screen()
+                    cap_lobby.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 if start_button.is_clicked(pos):
                     cap_lobby.set(cv2.CAP_PROP_POS_FRAMES, 0)
                     player1_choice = options[player1_index]

@@ -7,8 +7,11 @@ import cv2
 import numpy as np
 import sqlite3
 import hashlib
+import threading
+import tkinter as tk
+from tkinter import messagebox
 
-from network import NetworkClient  # импортируем наш модуль сетевого клиента
+# from network import NetworkClient  # если используется, раскомментируйте
 
 pygame.init()
 SCREEN_WIDTH = 1920
@@ -93,102 +96,69 @@ def login_user(login, password):
         return False, "Invalid credentials!"
 
 
-def get_text_input(prompt, hidden=False):
+def update_stats(winner_login, loser_login):
     """
-    Отображает простую форму ввода текста.
-    Если hidden=True, вместо символов выводятся звёздочки.
+    Обновляет статистику в базе данных:
+    увеличивает количество побед у победителя и поражений у проигравшего.
     """
-    input_text = ""
-    font = pygame.font.SysFont(None, 48)
-    prompt_surf = font.render(prompt, True, WHITE)
-    active = True
-    while active:
-        for event in pygame.event.get():
-            if event.type == QUIT:
-                pygame.quit()
-                sys.exit()
-            if event.type == KEYDOWN:
-                if event.key == K_RETURN:
-                    active = False
-                elif event.key == K_BACKSPACE:
-                    input_text = input_text[:-1]
-                else:
-                    input_text += event.unicode
-
-        screen.fill(BLACK)
-        screen.blit(prompt_surf, (50, 50))
-        display_text = "*" * len(input_text) if hidden else input_text
-        input_surf = font.render(display_text, True, WHITE)
-        screen.blit(input_surf, (50, 150))
-        pygame.display.flip()
-        clock.tick(FPS)
-    return input_text
+    conn = sqlite3.connect("players.db")
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET win = win + 1 WHERE login = ?", (winner_login,))
+    cursor.execute("UPDATE users SET lose = lose + 1 WHERE login = ?", (loser_login,))
+    conn.commit()
+    conn.close()
 
 
-def auth_screen(player_number):
-    """
-    Показывает экран аутентификации для игрока с номером player_number.
-    Пользователь может выбрать: Login или Register, затем ввести логин и пароль.
-    Возвращается login (имя пользователя) при успешном входе.
-    """
-    font = pygame.font.SysFont(None, 48)
-    title = font.render(f"Player {player_number} Authentication", True, WHITE)
-    # Определяем две кнопки – Login и Register.
-    login_button = Button(pygame.Rect(100, 300, 200, 60), GREEN, "Login")
-    register_button = Button(pygame.Rect(400, 300, 200, 60), BLUE, "Register")
-    chosen = None
-    while chosen is None:
-        screen.fill(BLACK)
-        screen.blit(title, (50, 100))
-        login_button.draw(screen)
-        register_button.draw(screen)
-        for event in pygame.event.get():
-            if event.type == QUIT:
-                pygame.quit()
-                sys.exit()
-            if event.type == MOUSEBUTTONDOWN and event.button == 1:
-                pos = pygame.mouse.get_pos()
-                if login_button.is_clicked(pos):
-                    chosen = "login"
-                elif register_button.is_clicked(pos):
-                    chosen = "register"
-        pygame.display.flip()
-        clock.tick(FPS)
+def get_passwords_for_players():
+    creds = {}
+    root = tk.Tk()
+    root.title("Authentication")
+    root.withdraw()  # скрываем главное окно
 
-    # Получаем данные: логин и пароль.
-    user_login = get_text_input("Enter login:")
-    user_password = get_text_input("Enter password:", hidden=True)
+    def create_window(player_number):
+        win = tk.Toplevel(root)
+        win.title(f"Player {player_number} Authentication")
+        tk.Label(
+            win, text=f"Player {player_number} Authentication", font=("Arial", 16)
+        ).pack(pady=10)
+        mode_var = tk.StringVar(value="login")
+        tk.Radiobutton(win, text="Login", variable=mode_var, value="login").pack()
+        tk.Radiobutton(win, text="Register", variable=mode_var, value="register").pack()
+        tk.Label(win, text="Login:", font=("Arial", 12)).pack(pady=(10, 0))
+        login_entry = tk.Entry(win, font=("Arial", 12))
+        login_entry.pack(pady=5)
+        tk.Label(win, text="Password:", font=("Arial", 12)).pack(pady=(10, 0))
+        password_entry = tk.Entry(win, show="*", font=("Arial", 12))
+        password_entry.pack(pady=5)
 
-    if chosen == "register":
-        success, message = register_user(user_login, user_password)
-        if not success:
-            error_font = pygame.font.SysFont(None, 36)
-            error_text = error_font.render(message, True, RED)
-            screen.fill(BLACK)
-            screen.blit(error_text, (50, 200))
-            pygame.display.flip()
-            pygame.time.wait(2000)
-            return auth_screen(player_number)
-        else:
-            # После успешной регистрации автоматически вход.
-            return user_login
-    else:
-        success, message = login_user(user_login, user_password)
-        if not success:
-            error_font = pygame.font.SysFont(None, 36)
-            error_text = error_font.render(message, True, RED)
-            screen.fill(BLACK)
-            screen.blit(error_text, (50, 200))
-            pygame.display.flip()
-            pygame.time.wait(2000)
-            return auth_screen(player_number)
-        else:
-            return user_login
+        def submit():
+            user_login = login_entry.get().strip()
+            user_password = password_entry.get().strip()
+            if not user_login or not user_password:
+                messagebox.showerror("Error", "Both fields are required.", parent=win)
+                return
+            if mode_var.get() == "register":
+                success, msg = register_user(user_login, user_password)
+                if not success:
+                    messagebox.showerror("Error", msg, parent=win)
+                    return
+            else:
+                success, msg = login_user(user_login, user_password)
+                if not success:
+                    messagebox.showerror("Error", msg, parent=win)
+                    return
+            creds[player_number] = user_login
+            win.destroy()
 
+        tk.Button(win, text="Submit", command=submit, font=("Arial", 12)).pack(pady=10)
 
-#############################################
-# Далее идут функции загрузки ассетов, UI и игры
-#############################################
+    create_window(1)
+    create_window(2)
+    while len(creds) < 2:
+        root.update()
+        time.sleep(0.01)
+    root.destroy()
+    return creds.get(1), creds.get(2)
 
 
 def get_frame_surface(cap, w, h):
@@ -201,6 +171,11 @@ def get_frame_surface(cap, w, h):
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     frame = cv2.resize(frame, (w, h))
     return pygame.surfarray.make_surface(np.transpose(frame, (1, 0, 2)))
+
+
+#############################################
+# Классы и функции для игры                #
+#############################################
 
 
 class Button:
@@ -406,11 +381,11 @@ class Player(pygame.sprite.Sprite):
         self.gravity_helper()
 
     def draw_health_bar(self, screen, x, y):
-        bar_width = 300
-        bar_height = 30
+        bar_width = 275
+        bar_height = 20
         pygame.draw.rect(screen, RED, (x, y, bar_width, bar_height))
         ratio = self.health / 100.0
-        health_color = (255, 0, 255)
+        health_color = (0, 128, 0)
         current_health_width = ratio * bar_width
         pygame.draw.rect(screen, health_color, (x, y, current_health_width, bar_height))
         if hasattr(self, "xp_frame") and self.xp_frame is not None:
@@ -418,323 +393,9 @@ class Player(pygame.sprite.Sprite):
             frame_w = frame.get_width()
             frame_h = frame.get_height()
             new_x = x - (frame_w - bar_width) // 2
-            new_y = y - (frame_h - bar_height) // 2
+            # Смещаем XP-бар на 30 пикселей вниз:
+            new_y = y - (frame_h - bar_height) // 2 + 40
             screen.blit(frame, (new_x, new_y))
-
-
-class AIPlayer(Player):
-    def inputer(
-        self, other, keys, controls, bullets_group, bullet_animation_frames, bullet_type
-    ):
-        self.is_moving = False
-        direction = 1 if other.rect.x > self.rect.x else -1
-        distance = abs(self.rect.centerx - other.rect.centerx)
-        if distance < 180:
-            if random.random() < 0.1:
-                self.rect.x -= self.speed * direction
-                self.is_moving = True
-                if direction == 1 and self.facing_right:
-                    self.flip_images()
-                    self.facing_right = False
-                elif direction == -1 and not self.facing_right:
-                    self.flip_images()
-                    self.facing_right = True
-            else:
-                self.rect.x += self.speed * direction
-                self.is_moving = True
-                if direction == 1 and not self.facing_right:
-                    self.flip_images()
-                    self.facing_right = True
-                elif direction == -1 and self.facing_right:
-                    self.flip_images()
-                    self.facing_right = False
-        elif distance > 800:
-            self.rect.x += self.speed * direction
-            self.is_moving = True
-            if direction == 1 and not self.facing_right:
-                self.flip_images()
-                self.facing_right = True
-            elif direction == -1 and self.facing_right:
-                self.flip_images()
-                self.facing_right = False
-        else:
-            if random.random() < 0.02:
-                step_dir = 1 if random.random() < 0.5 else -1
-                self.rect.x += step_dir * self.speed
-                self.is_moving = True
-                if step_dir == 1 and not self.facing_right:
-                    self.flip_images()
-                    self.facing_right = True
-                elif step_dir == -1 and self.facing_right:
-                    self.flip_images()
-                    self.facing_right = False
-        self.rect.x = max(0, min(self.rect.x, SCREEN_WIDTH - self.rect.width))
-        if self.on_ground and random.random() < 0.03:
-            self.dy = self.jump_speed
-            self.on_ground = False
-            self.is_jumping = True
-        current_time = time.time()
-        if current_time - self.last_shot_time > 0.2:
-            self.last_shot_time = current_time
-            for i in range(3):
-                bullet = Bullet(
-                    self.rect.centerx,
-                    self.rect.centery - 10 + i * 10,
-                    direction,
-                    self,
-                    bullet_animation_frames,
-                    bullet_type,
-                )
-                bullets_group.add(bullet)
-        if distance < 110 and current_time - self.last_hit_time > 1.0:
-            self.is_hitting = True
-            self.hit_frame = 0
-            self.last_hit_time = current_time
-            if direction == 1:
-                self.rect.x += 15
-            else:
-                self.rect.x -= 15
-            if self.rect.colliderect(other.rect):
-                other.health -= 10
-        self.rect.x = max(0, min(self.rect.x, SCREEN_WIDTH - self.rect.width))
-        floor_level = SCREEN_HEIGHT - 100
-        if self.rect.bottom >= floor_level:
-            self.rect.bottom = floor_level
-            self.dy = 0
-            self.on_ground = True
-            self.is_jumping = False
-            self.jump_frame = 0
-
-
-def load_image_with_fallback(path, width, height, fallback_color):
-    try:
-        image = pygame.image.load(path).convert_alpha()
-    except:
-        image = pygame.Surface((width, height))
-        image.fill(fallback_color)
-    return pygame.transform.scale(image, (width, height))
-
-
-def load_animation(folder, frame_count, prefix, width=350, height=350):
-    frames = []
-    for i in range(frame_count):
-        path = f"{folder}/{prefix}_{i+1}.png"
-        frame_surf = load_image_with_fallback(path, width, height, ORANGE)
-        frames.append(frame_surf)
-    return frames
-
-
-def create_pepe_animation(folder, frame_count, prefix, width=350, height=350):
-    frames = []
-    for i in range(frame_count):
-        frame_number = str(i).zfill(5)
-        path = f"{folder}/{prefix}_{frame_number}.png"
-        frame_surf = load_image_with_fallback(path, width, height, BLUE)
-        frames.append(frame_surf)
-    return frames
-
-
-def load_bullet_animation(
-    folder, frame_count, prefix, width=300, height=150, color=GRAY
-):
-    frames = []
-    for i in range(frame_count):
-        frame_number = str(i).zfill(5)
-        path = f"{folder}/{prefix}_{frame_number}.png"
-        frame_surf = load_image_with_fallback(path, width, height, color)
-        frames.append(frame_surf)
-    return frames
-
-
-def show_loading_screen(progress, total):
-    screen.fill(BLACK)
-    font = pygame.font.SysFont(None, 74)
-    loading_text = font.render("Loading...", True, WHITE)
-    loading_rect = loading_text.get_rect(
-        center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 50)
-    )
-    screen.blit(loading_text, loading_rect)
-    bar_width = 400
-    bar_height = 30
-    bar_x = (SCREEN_WIDTH - bar_width) // 2
-    bar_y = SCREEN_HEIGHT // 2
-    pygame.draw.rect(
-        screen, GRAY, (bar_x, bar_y, bar_width, bar_height), border_radius=5
-    )
-    loaded_width = int(bar_width * (progress / total))
-    pygame.draw.rect(
-        screen, GREEN, (bar_x, bar_y, loaded_width, bar_height), border_radius=5
-    )
-    pygame.display.flip()
-
-
-def load_all_assets():
-    total_load_steps = 800
-    current_progress = 0
-    show_loading_screen(current_progress, total_load_steps)
-
-    durov_run = load_animation("durov", 20, "дуров бежит")
-    current_progress += 20
-    show_loading_screen(current_progress, total_load_steps)
-
-    durov_jump = load_animation("durov_jump", 49, "durov_jump")
-    current_progress += 49
-    show_loading_screen(current_progress, total_load_steps)
-
-    durov_hit = load_animation("damage_1", 37, "durov_hit")
-    current_progress += 37
-    show_loading_screen(current_progress, total_load_steps)
-
-    durov_idle = create_pepe_animation("waiter_durov", 55, "стойкаааааааааааа")
-    current_progress += 55
-    show_loading_screen(current_progress, total_load_steps)
-
-    pepe_run = create_pepe_animation("pepe_run", 31, "бег пепе")
-    current_progress += 31
-    show_loading_screen(current_progress, total_load_steps)
-
-    pepe_jump = create_pepe_animation("pepe_run", 30, "бег пепе")
-    current_progress += 30
-    show_loading_screen(current_progress, total_load_steps)
-
-    pepe_hit = create_pepe_animation("hit_pepe_1", 28, "удар пепе 1")
-    current_progress += 28
-    show_loading_screen(current_progress, total_load_steps)
-
-    pepe_idle = create_pepe_animation("waiter_pepe", 60, "пепе стойка")
-    current_progress += 60
-    show_loading_screen(current_progress, total_load_steps)
-
-    ton_bullet = load_bullet_animation("ton coin", 155, "ton coin", 150, 75, GRAY)
-    current_progress += 155
-    show_loading_screen(current_progress, total_load_steps)
-
-    pepe_bullet = load_bullet_animation("pepe coin", 155, "пепе пуля", 150, 75, PURPLE)
-    current_progress += 155
-    show_loading_screen(current_progress, total_load_steps)
-
-    main_video = cv2.VideoCapture("поле_1.mp4")
-    current_progress += 1
-    show_loading_screen(current_progress, total_load_steps)
-
-    lobby_video = cv2.VideoCapture("лобби.mp4")
-    current_progress += 1
-    show_loading_screen(current_progress, total_load_steps)
-
-    start_game_anim = create_pepe_animation("start game", 65, "start game", 472, 100)
-    current_progress += 65
-    show_loading_screen(current_progress, total_load_steps)
-
-    ai_image = load_image_with_fallback("AI_name.png", 300, 300, GRAY)
-    current_progress += 1
-    show_loading_screen(current_progress, total_load_steps)
-
-    left_glow = create_pepe_animation("свечение_левое", 41, "Left glow", 1920, 1080)
-    current_progress += 41
-    show_loading_screen(current_progress, total_load_steps)
-
-    right_glow = create_pepe_animation("свечение_правое", 41, "Right glow", 1920, 1080)
-    current_progress += 41
-    show_loading_screen(current_progress, total_load_steps)
-
-    matrix_durov = create_pepe_animation(
-        "matrix_durov", 55, "Holomatrix Durov", 350, 350
-    )
-    current_progress += 55
-    show_loading_screen(current_progress, total_load_steps)
-
-    matrix_pepe = create_pepe_animation("matrix_pepe", 47, "Holomatrix pepe", 350, 350)
-    current_progress += 47
-    show_loading_screen(current_progress, total_load_steps)
-
-    changer_img = load_image_with_fallback("changer.png", 50, 50, GRAY)
-    current_progress += 1
-    show_loading_screen(current_progress, total_load_steps)
-
-    xp_left_durov = load_image_with_fallback("XP bars/левый_дуров.png", 300, 85, GRAY)
-    current_progress += 1
-    show_loading_screen(current_progress, total_load_steps)
-
-    xp_right_durov = load_image_with_fallback("XP bars/правый_дуров.png", 300, 85, GRAY)
-    current_progress += 1
-    show_loading_screen(current_progress, total_load_steps)
-
-    xp_left_pepe = load_image_with_fallback("XP bars/левый_пепе.png", 300, 85, GRAY)
-    current_progress += 1
-    show_loading_screen(current_progress, total_load_steps)
-
-    xp_right_pepe = load_image_with_fallback("XP bars/правый_пепе.png", 300, 85, GRAY)
-    current_progress += 1
-    show_loading_screen(current_progress, total_load_steps)
-
-    return {
-        "durov": {
-            "run": durov_run,
-            "jump": durov_jump,
-            "hit": durov_hit,
-            "idle": durov_idle,
-        },
-        "pepe": {
-            "run": pepe_run,
-            "jump": pepe_jump,
-            "hit": pepe_hit,
-            "idle": pepe_idle,
-        },
-        "bullets": {
-            "ton": ton_bullet,
-            "pepe": pepe_bullet,
-        },
-        "video": main_video,
-        "video_lobby": lobby_video,
-        "start_game_anim": start_game_anim,
-        "ai_image": ai_image,
-        "left_glow": left_glow,
-        "right_glow": right_glow,
-        "matrix_durov": matrix_durov,
-        "matrix_pepe": matrix_pepe,
-        "changer": changer_img,
-        "xp_left_durov": xp_left_durov,
-        "xp_right_durov": xp_right_durov,
-        "xp_left_pepe": xp_left_pepe,
-        "xp_right_pepe": xp_right_pepe,
-    }
-
-
-def shop_screen():
-    scroll_offset = 0
-    squares = []
-    square_size = 200
-    gap = 50
-    base_x = 200
-    base_y = 200
-    for col in range(2):
-        for row in range(2):
-            x = base_x + col * (square_size + gap)
-            y = base_y + row * (square_size + gap)
-            squares.append(pygame.Rect(x, y, square_size, square_size))
-    back_button = Button(pygame.Rect(50, SCREEN_HEIGHT - 100, 200, 60), BLUE, "Back")
-    running = True
-    while running:
-        screen.fill(WHITE)
-        for event in pygame.event.get():
-            if event.type == QUIT:
-                pygame.quit()
-                sys.exit()
-            if event.type == KEYDOWN:
-                if event.key == K_UP:
-                    scroll_offset += 50
-                if event.key == K_DOWN:
-                    scroll_offset -= 50
-            if event.type == MOUSEBUTTONDOWN and event.button == 1:
-                pos = pygame.mouse.get_pos()
-                if back_button.is_clicked(pos):
-                    running = False
-        for sq in squares:
-            shifted_rect = sq.move(0, scroll_offset)
-            pygame.draw.rect(screen, ORANGE, shifted_rect)
-        back_button.draw(screen)
-        pygame.display.flip()
-        clock.tick(FPS)
 
 
 class AIPlayerLocal(Player):
@@ -820,6 +481,240 @@ class AIPlayerLocal(Player):
             self.on_ground = True
             self.is_jumping = False
             self.jump_frame = 0
+
+
+def load_image_with_fallback(path, width, height, fallback_color):
+    try:
+        image = pygame.image.load(path).convert_alpha()
+    except:
+        image = pygame.Surface((width, height))
+        image.fill(fallback_color)
+    return pygame.transform.scale(image, (width, height))
+
+
+def load_animation(folder, frame_count, prefix, width=350, height=350):
+    frames = []
+    for i in range(frame_count):
+        path = f"{folder}/{prefix}_{i+1}.png"
+        frame_surf = load_image_with_fallback(path, width, height, ORANGE)
+        frames.append(frame_surf)
+    return frames
+
+
+def create_pepe_animation(folder, frame_count, prefix, width=350, height=350):
+    frames = []
+    for i in range(frame_count):
+        frame_number = str(i).zfill(5)
+        path = f"{folder}/{prefix}_{frame_number}.png"
+        frame_surf = load_image_with_fallback(path, width, height, BLUE)
+        frames.append(frame_surf)
+    return frames
+
+
+def load_bullet_animation(
+    folder, frame_count, prefix, width=300, height=150, color=GRAY
+):
+    frames = []
+    for i in range(frame_count):
+        frame_number = str(i).zfill(5)
+        path = f"{folder}/{prefix}_{frame_number}.png"
+        frame_surf = load_image_with_fallback(path, width, height, color)
+        frames.append(frame_surf)
+    return frames
+
+
+def show_loading_screen(progress, total):
+    screen.fill(BLACK)
+    font = pygame.font.SysFont(None, 74)
+    loading_text = font.render("Loading...", True, WHITE)
+    loading_rect = loading_text.get_rect(
+        center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 50)
+    )
+    screen.blit(loading_text, loading_rect)
+    bar_width = 400
+    bar_height = 30
+    bar_x = (SCREEN_WIDTH - bar_width) // 2
+    bar_y = SCREEN_HEIGHT // 2
+    pygame.draw.rect(
+        screen, GRAY, (bar_x, bar_y, bar_width, bar_height), border_radius=5
+    )
+    loaded_width = int(bar_width * (progress / total))
+    pygame.draw.rect(
+        screen, GREEN, (bar_x, bar_y, loaded_width, bar_height), border_radius=5
+    )
+    pygame.display.flip()
+
+
+def load_all_assets():
+    total_load_steps = 1000
+    current_progress = 0
+    show_loading_screen(current_progress, total_load_steps)
+
+    durov_run = load_animation("durov", 20, "дуров бежит")
+    current_progress += 20
+    show_loading_screen(current_progress, total_load_steps)
+
+    durov_jump = load_animation("durov_jump", 49, "durov_jump")
+    current_progress += 49
+    show_loading_screen(current_progress, total_load_steps)
+
+    durov_hit = load_animation("damage_1", 37, "durov_hit")
+    current_progress += 37
+    show_loading_screen(current_progress, total_load_steps)
+
+    durov_idle = create_pepe_animation("waiter_durov", 55, "стойкаааааааааааа")
+    current_progress += 55
+    show_loading_screen(current_progress, total_load_steps)
+
+    pepe_run = create_pepe_animation("pepe_run", 31, "бег пепе")
+    current_progress += 31
+    show_loading_screen(current_progress, total_load_steps)
+
+    pepe_jump = create_pepe_animation("pepe_run", 30, "бег пепе")
+    current_progress += 30
+    show_loading_screen(current_progress, total_load_steps)
+
+    pepe_hit = create_pepe_animation("hit_pepe_1", 28, "удар пепе 1")
+    current_progress += 28
+    show_loading_screen(current_progress, total_load_steps)
+
+    pepe_idle = create_pepe_animation("waiter_pepe", 60, "пепе стойка")
+    current_progress += 60
+    show_loading_screen(current_progress, total_load_steps)
+
+    ton_bullet = load_bullet_animation("ton coin", 155, "ton coin", 150, 75, GRAY)
+    current_progress += 155
+    show_loading_screen(current_progress, total_load_steps)
+
+    pepe_bullet = load_bullet_animation("pepe coin", 155, "пепе пуля", 150, 75, PURPLE)
+    current_progress += 155
+    show_loading_screen(current_progress, total_load_steps)
+
+    main_video = cv2.VideoCapture("поле_1.mp4")
+    current_progress += 1
+    show_loading_screen(current_progress, total_load_steps)
+
+    lobby_video = cv2.VideoCapture("лобби.mp4")
+    current_progress += 1
+    show_loading_screen(current_progress, total_load_steps)
+
+    start_game_anim = create_pepe_animation("start game", 65, "start game", 472, 100)
+    current_progress += 65
+    show_loading_screen(current_progress, total_load_steps)
+
+    ai_image = load_image_with_fallback("AI_name.png", 300, 300, GRAY)
+    current_progress += 1
+    show_loading_screen(current_progress, total_load_steps)
+
+    left_glow = create_pepe_animation("свечение_левое", 41, "Left glow", 1920, 1080)
+    current_progress += 41
+    show_loading_screen(current_progress, total_load_steps)
+
+    right_glow = create_pepe_animation("свечение_правое", 41, "Right glow", 1920, 1080)
+    current_progress += 41
+    show_loading_screen(current_progress, total_load_steps)
+
+    matrix_durov = create_pepe_animation(
+        "matrix_durov", 55, "Holomatrix Durov", 350, 350
+    )
+    current_progress += 55
+    show_loading_screen(current_progress, total_load_steps)
+
+    matrix_pepe = create_pepe_animation("matrix_pepe", 47, "Holomatrix pepe", 350, 350)
+    current_progress += 47
+    show_loading_screen(current_progress, total_load_steps)
+
+    changer_img = load_image_with_fallback("changer.png", 50, 50, GRAY)
+    current_progress += 1
+    show_loading_screen(current_progress, total_load_steps)
+
+    # Изменяем размер XP bars, чтобы они учитывали смещение – высота теперь 125 пикселей
+    xp_left_durov = load_image_with_fallback("XP bars/левый_дуров.png", 300, 125, GRAY)
+    current_progress += 1
+    show_loading_screen(current_progress, total_load_steps)
+
+    xp_right_durov = load_image_with_fallback(
+        "XP bars/правый_дуров.png", 300, 125, GRAY
+    )
+    current_progress += 1
+    show_loading_screen(current_progress, total_load_steps)
+
+    xp_left_pepe = load_image_with_fallback("XP bars/левый_пепе.png", 300, 125, GRAY)
+    current_progress += 1
+    show_loading_screen(current_progress, total_load_steps)
+
+    xp_right_pepe = load_image_with_fallback("XP bars/правый_пепе.png", 300, 125, GRAY)
+    current_progress += 1
+    show_loading_screen(current_progress, total_load_steps)
+
+    return {
+        "durov": {
+            "run": durov_run,
+            "jump": durov_jump,
+            "hit": durov_hit,
+            "idle": durov_idle,
+        },
+        "pepe": {
+            "run": pepe_run,
+            "jump": pepe_jump,
+            "hit": pepe_hit,
+            "idle": pepe_idle,
+        },
+        "bullets": {
+            "ton": ton_bullet,
+            "pepe": pepe_bullet,
+        },
+        "video": main_video,
+        "video_lobby": lobby_video,
+        "start_game_anim": start_game_anim,
+        "ai_image": ai_image,
+        "left_glow": left_glow,
+        "right_glow": right_glow,
+        "matrix_durov": matrix_durov,
+        "matrix_pepe": matrix_pepe,
+        "changer": changer_img,
+        "xp_left_durov": xp_left_durov,
+        "xp_right_durov": xp_right_durov,
+        "xp_left_pepe": xp_left_pepe,
+        "xp_right_pepe": xp_right_pepe,
+    }
+
+
+def shop_screen():
+    scroll_offset = 0
+    squares = []
+    square_size = 200
+    gap = 50
+    base_x = 200
+    base_y = 200
+    for col in range(2):
+        for row in range(2):
+            x = base_x + col * (square_size + gap)
+            y = base_y + row * (square_size + gap)
+            squares.append(pygame.Rect(x, y, square_size, square_size))
+    back_button = Button(pygame.Rect(50, SCREEN_HEIGHT - 100, 200, 60), BLUE, "Back")
+    running = True
+    while running:
+        screen.fill(WHITE)
+        for event in pygame.event.get():
+            if event.type == QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == KEYDOWN:
+                if event.key == K_UP:
+                    scroll_offset += 50
+                if event.key == K_DOWN:
+                    scroll_offset -= 50
+            if event.type == MOUSEBUTTONDOWN and event.button == 1:
+                pos = pygame.mouse.get_pos()
+                if back_button.is_clicked(pos):
+                    running = False
+        for sq in squares:
+            shifted_rect = sq.move(0, scroll_offset)
+            pygame.draw.rect(screen, ORANGE, shifted_rect)
+        back_button.draw(screen)
+        pygame.display.flip()
+        clock.tick(FPS)
 
 
 def main_game(player1_choice, player2_choice, assets, player_logins):
@@ -1039,10 +934,10 @@ def main_game(player1_choice, player2_choice, assets, player_logins):
             all_sprites.draw(screen)
             bullets.draw(screen)
 
+            # Отрисовка HP-полос и XP-баров. HP-полоса рисуется с координатой y = 40 (на 30 пикселей ниже предыдущей позиции)
             player1.draw_health_bar(screen, 100, 40)
             player2.draw_health_bar(screen, SCREEN_WIDTH - 400, 40)
 
-            # Вывод логинов игроков по краям экрана:
             login_font = pygame.font.SysFont(None, 36)
             p1_login_text = login_font.render(player_logins["player1"], True, WHITE)
             p2_login_text = login_font.render(player_logins["player2"], True, WHITE)
@@ -1084,8 +979,10 @@ def main_game(player1_choice, player2_choice, assets, player_logins):
 
     if score1 > score2:
         final_text = "Player 1 WINS the match!"
+        update_stats(player_logins["player1"], player_logins["player2"])
     elif score2 > score1:
         final_text = "Player 2 WINS the match!"
+        update_stats(player_logins["player2"], player_logins["player1"])
     else:
         final_text = "MATCH DRAW!"
     final_surf = pygame.font.SysFont(None, 74).render(final_text, True, YELLOW)
@@ -1137,7 +1034,7 @@ def main_menu(assets, player_logins):
 
     shop_button = Button(pygame.Rect(20, 20, 150, 50), BLUE, "Shop")
     start_button = Button(
-        pygame.Rect(SCREEN_WIDTH // 2 - 150, SCREEN_HEIGHT - 200, 500, 150),
+        pygame.Rect(SCREEN_WIDTH // 2 - 180, SCREEN_HEIGHT - 200, 500, 150),
         GREEN,
         "Start Game",
         no_background=True,
@@ -1273,7 +1170,6 @@ def main_menu(assets, player_logins):
         )
         screen.blit(scaled_anim_frame, start_button.rect.topleft)
 
-        # Вывод логинов игроков по краям экрана в главном меню:
         login_font = pygame.font.SysFont(None, 36)
         p1_login_text = login_font.render(player_logins["player1"], True, WHITE)
         p2_login_text = login_font.render(player_logins["player2"], True, WHITE)
@@ -1329,14 +1225,22 @@ def main_menu(assets, player_logins):
 
 
 def main():
-    # Открываем базу данных (players.db) и создаём таблицу, если её ещё нет
     init_db()
-    # Проводим аутентификацию для обоих игроков
-    player1_login = auth_screen(1)
-    player2_login = auth_screen(2)
+
+    assets_holder = {}
+
+    def load_assets_thread():
+        assets_holder["assets"] = load_all_assets()
+
+    asset_thread = threading.Thread(target=load_assets_thread)
+    asset_thread.start()
+
+    player1_login, player2_login = get_passwords_for_players()
     player_logins = {"player1": player1_login, "player2": player2_login}
 
-    assets = load_all_assets()
+    asset_thread.join()
+    assets = assets_holder["assets"]
+
     main_menu(assets, player_logins)
 
 
