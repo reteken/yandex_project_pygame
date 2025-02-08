@@ -64,7 +64,7 @@ def register_user(login, password):
     cursor.execute("SELECT * FROM users WHERE login = ?", (login,))
     if cursor.fetchone():
         conn.close()
-        return False, "User already exists!"
+        return False, "No."
     cursor.execute(
         "INSERT INTO users (login, password, win, lose) VALUES (?, ?, 0, 0)",
         (login, hashed),
@@ -101,14 +101,14 @@ def update_stats(winner_login, loser_login):
 def get_passwords_for_players():
     creds = {}
     root = tk.Tk()
-    root.title("Authentication")
+    root.title("Auth")
     root.withdraw()
 
     def create_window(player_number):
         win = tk.Toplevel(root)
-        win.title(f"Player {player_number} Authentication")
+        win.title(f"Player {player_number} Auth")
         win.geometry("250x300")
-        tk.Label(win, text=f"Player {player_number} Authentication").pack(pady=10)
+        tk.Label(win, text=f"Player {player_number} Auth").pack(pady=10)
         mode_var = tk.StringVar(value="login")
         tk.Radiobutton(win, text="Login", variable=mode_var, value="login").pack()
         tk.Radiobutton(win, text="Register", variable=mode_var, value="register").pack()
@@ -123,7 +123,7 @@ def get_passwords_for_players():
             user_login = login_entry.get().strip()
             user_password = password_entry.get().strip()
             if not user_login or not user_password:
-                messagebox.showerror("Error", "Both fields are required.", parent=win)
+                messagebox.showerror("Error", "Both must be full", parent=win)
                 return
             if mode_var.get() == "register":
                 success, msg = register_user(user_login, user_password)
