@@ -381,8 +381,8 @@ class Player(pygame.sprite.Sprite):
         self.gravity_helper()
 
     def draw_health_bar(self, screen, x, y):
-        bar_width = 275
-        bar_height = 20
+        bar_width = 225
+        bar_height = 18
         pygame.draw.rect(screen, RED, (x, y, bar_width, bar_height))
         ratio = self.health / 100.0
         health_color = (0, 128, 0)
@@ -570,7 +570,7 @@ def load_all_assets():
     current_progress += 31
     show_loading_screen(current_progress, total_load_steps)
 
-    pepe_jump = create_pepe_animation("pepe_run", 30, "бег пепе")
+    pepe_jump = create_pepe_animation("jump_pepe", 29, "пепе пепе")
     current_progress += 30
     show_loading_screen(current_progress, total_load_steps)
 
@@ -935,8 +935,8 @@ def main_game(player1_choice, player2_choice, assets, player_logins):
             bullets.draw(screen)
 
             # Отрисовка HP-полос и XP-баров. HP-полоса рисуется с координатой y = 40 (на 30 пикселей ниже предыдущей позиции)
-            player1.draw_health_bar(screen, 100, 40)
-            player2.draw_health_bar(screen, SCREEN_WIDTH - 400, 40)
+            player1.draw_health_bar(screen, 55, 40)
+            player2.draw_health_bar(screen, SCREEN_WIDTH - 355, 40)
 
             login_font = pygame.font.SysFont(None, 36)
             p1_login_text = login_font.render(player_logins["player1"], True, WHITE)

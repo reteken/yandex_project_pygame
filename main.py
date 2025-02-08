@@ -5,8 +5,13 @@ import random
 import time
 import cv2
 import numpy as np
-import json
-from network import NetworkClient  # импортируем наш модуль сетевого клиента
+import sqlite3
+import hashlib
+import threading
+import tkinter as tk
+from tkinter import messagebox
+
+# from network import NetworkClient  # если используется, раскомментируйте
 
 pygame.init()
 SCREEN_WIDTH = 1920
@@ -26,11 +31,139 @@ screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("Dmitriy Combat 2D")
 clock = pygame.time.Clock()
 
+#############################################
+# SQL-интеграция и функции аутентификации  #
+#############################################
+
+
+def hash_password(password):
+    """Возвращает SHA256-хэш от переданного пароля."""
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+
+def init_db():
+    """
+    Открывает базу данных players.db и создаёт таблицу users, если её ещё нет.
+    """
+    conn = sqlite3.connect("players.db")
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            login TEXT NOT NULL,
+            password TEXT NOT NULL,
+            win INTEGER NOT NULL DEFAULT 0,
+            lose INTEGER NOT NULL DEFAULT 0
+        )
+        """
+    )
+    conn.commit()
+    conn.close()
+
+
+def register_user(login, password):
+    """Регистрирует нового пользователя, если логин ещё не занят."""
+    hashed = hash_password(password)
+    conn = sqlite3.connect("players.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE login = ?", (login,))
+    if cursor.fetchone():
+        conn.close()
+        return False, "User already exists!"
+    cursor.execute(
+        "INSERT INTO users (login, password, win, lose) VALUES (?, ?, 0, 0)",
+        (login, hashed),
+    )
+    conn.commit()
+    conn.close()
+    return True, "Registration successful!"
+
+
+def login_user(login, password):
+    """Проверяет корректность введённых логина и пароля."""
+    hashed = hash_password(password)
+    conn = sqlite3.connect("players.db")
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM users WHERE login = ? AND password = ?", (login, hashed)
+    )
+    user = cursor.fetchone()
+    conn.close()
+    if user:
+        return True, "Login successful!"
+    else:
+        return False, "Invalid credentials!"
+
+
+def update_stats(winner_login, loser_login):
+    """
+    Обновляет статистику в базе данных:
+    увеличивает количество побед у победителя и поражений у проигравшего.
+    """
+    conn = sqlite3.connect("players.db")
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET win = win + 1 WHERE login = ?", (winner_login,))
+    cursor.execute("UPDATE users SET lose = lose + 1 WHERE login = ?", (loser_login,))
+    conn.commit()
+    conn.close()
+
+
+def get_passwords_for_players():
+    creds = {}
+    root = tk.Tk()
+    root.title("Authentication")
+    root.withdraw()  # скрываем главное окно
+
+    def create_window(player_number):
+        win = tk.Toplevel(root)
+        win.title(f"Player {player_number} Authentication")
+        tk.Label(
+            win, text=f"Player {player_number} Authentication", font=("Arial", 16)
+        ).pack(pady=10)
+        mode_var = tk.StringVar(value="login")
+        tk.Radiobutton(win, text="Login", variable=mode_var, value="login").pack()
+        tk.Radiobutton(win, text="Register", variable=mode_var, value="register").pack()
+        tk.Label(win, text="Login:", font=("Arial", 12)).pack(pady=(10, 0))
+        login_entry = tk.Entry(win, font=("Arial", 12))
+        login_entry.pack(pady=5)
+        tk.Label(win, text="Password:", font=("Arial", 12)).pack(pady=(10, 0))
+        password_entry = tk.Entry(win, show="*", font=("Arial", 12))
+        password_entry.pack(pady=5)
+
+        def submit():
+            user_login = login_entry.get().strip()
+            user_password = password_entry.get().strip()
+            if not user_login or not user_password:
+                messagebox.showerror("Error", "Both fields are required.", parent=win)
+                return
+            if mode_var.get() == "register":
+                success, msg = register_user(user_login, user_password)
+                if not success:
+                    messagebox.showerror("Error", msg, parent=win)
+                    return
+            else:
+                success, msg = login_user(user_login, user_password)
+                if not success:
+                    messagebox.showerror("Error", msg, parent=win)
+                    return
+            creds[player_number] = user_login
+            win.destroy()
+
+        tk.Button(win, text="Submit", command=submit, font=("Arial", 12)).pack(pady=10)
+
+    create_window(1)
+    create_window(2)
+    while len(creds) < 2:
+        root.update()
+        time.sleep(0.01)
+    root.destroy()
+    return creds.get(1), creds.get(2)
+
 
 def get_frame_surface(cap, w, h):
     ret, frame = cap.read()
     if not ret:
-        # Если не удалось прочитать кадр, сбрасываем видео и пробуем снова
         cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
         ret, frame = cap.read()
         if not ret:
@@ -38,6 +171,11 @@ def get_frame_surface(cap, w, h):
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     frame = cv2.resize(frame, (w, h))
     return pygame.surfarray.make_surface(np.transpose(frame, (1, 0, 2)))
+
+
+#############################################
+# Классы и функции для игры                #
+#############################################
 
 
 class Button:
@@ -243,79 +381,72 @@ class Player(pygame.sprite.Sprite):
         self.gravity_helper()
 
     def draw_health_bar(self, screen, x, y):
-        bar_width = 200
-        bar_height = 20
-
-        # Рисуем фон HP-бар (красный)
+        bar_width = 225
+        bar_height = 18
         pygame.draw.rect(screen, RED, (x, y, bar_width, bar_height))
-
-        # Вычисляем отношение оставшегося здоровья (от 0 до 1)
         ratio = self.health / 100.0
-
-        # Интерполируем цвет: при 100% здоровья – зеленый (0,255,0), при 0% – красный (255,0,0)
-        health_color = (0, 255, 0)
-
+        health_color = (0, 128, 0)
         current_health_width = ratio * bar_width
         pygame.draw.rect(screen, health_color, (x, y, current_health_width, bar_height))
-
-        # Если у игрока установлена XP-рамка (PNG-окоемка), выводим её, центрируя относительно HP-бар
         if hasattr(self, "xp_frame") and self.xp_frame is not None:
             frame = self.xp_frame
             frame_w = frame.get_width()
             frame_h = frame.get_height()
             new_x = x - (frame_w - bar_width) // 2
-            new_y = y - (frame_h - bar_height) // 2
+            # Смещаем XP-бар на 30 пикселей вниз:
+            new_y = y - (frame_h - bar_height) // 2 + 40
             screen.blit(frame, (new_x, new_y))
 
 
-class AIPlayer(Player):
+class AIPlayerLocal(Player):
     def inputer(
         self, other, keys, controls, bullets_group, bullet_animation_frames, bullet_type
     ):
         self.is_moving = False
-        direction = 1 if other.rect.x > self.rect.x else -1
-        distance = abs(self.rect.centerx - other.rect.centerx)
-        if distance < 180:
-            if random.random() < 0.1:
-                self.rect.x -= self.speed * direction
-                self.is_moving = True
-                if direction == 1 and self.facing_right:
-                    self.flip_images()
-                    self.facing_right = False
-                elif direction == -1 and not self.facing_right:
-                    self.flip_images()
+        current_time = time.time()
+        dx = other.rect.centerx - self.rect.centerx
+        distance = abs(dx)
+        optimal_min = 200
+        optimal_max = 400
+        move_speed = self.speed
+
+        if distance > optimal_max:
+            if dx > 0:
+                self.rect.x += move_speed
+                if not self.facing_right:
                     self.facing_right = True
+                    self.flip_images()
             else:
-                self.rect.x += self.speed * direction
-                self.is_moving = True
-                if direction == 1 and not self.facing_right:
-                    self.flip_images()
-                    self.facing_right = True
-                elif direction == -1 and self.facing_right:
-                    self.flip_images()
+                self.rect.x -= move_speed
+                if self.facing_right:
                     self.facing_right = False
-        elif distance > 800:
-            self.rect.x += self.speed * direction
+                    self.flip_images()
             self.is_moving = True
-            if direction == 1 and not self.facing_right:
-                self.flip_images()
-                self.facing_right = True
-            elif direction == -1 and self.facing_right:
-                self.flip_images()
-                self.facing_right = False
-        else:
-            if random.random() < 0.02:
-                step_dir = 1 if random.random() < 0.5 else -1
-                self.rect.x += step_dir * self.speed
-                self.is_moving = True
-                if step_dir == 1 and not self.facing_right:
-                    self.flip_images()
-                    self.facing_right = True
-                elif step_dir == -1 and self.facing_right:
-                    self.flip_images()
+        elif distance < optimal_min:
+            if dx > 0:
+                self.rect.x -= move_speed
+                if self.facing_right:
                     self.facing_right = False
+                    self.flip_images()
+            else:
+                self.rect.x += move_speed
+                if not self.facing_right:
+                    self.facing_right = True
+                    self.flip_images()
+            self.is_moving = True
+        else:
+            if random.random() < 0.1:
+                step = random.choice([-move_speed, move_speed])
+                self.rect.x += step
+                self.is_moving = True
+                if step > 0 and not self.facing_right:
+                    self.facing_right = True
+                    self.flip_images()
+                elif step < 0 and self.facing_right:
+                    self.facing_right = False
+                    self.flip_images()
         self.rect.x = max(0, min(self.rect.x, SCREEN_WIDTH - self.rect.width))
-        if self.on_ground and random.random() < 0.03:
+        if self.on_ground and random.random() < 0.02:
             self.dy = self.jump_speed
             self.on_ground = False
             self.is_jumping = True
@@ -326,23 +457,22 @@ class AIPlayer(Player):
                 bullet = Bullet(
                     self.rect.centerx,
                     self.rect.centery - 10 + i * 10,
-                    direction,
+                    1 if self.rect.x < other.rect.x else -1,
                     self,
                     bullet_animation_frames,
                     bullet_type,
                 )
                 bullets_group.add(bullet)
         if distance < 110 and current_time - self.last_hit_time > 1.0:
-            if random.random() < 0.6:
-                self.is_hitting = True
-                self.hit_frame = 0
-                self.last_hit_time = current_time
-                if direction == 1:
-                    self.rect.x += 15
-                else:
-                    self.rect.x -= 15
-                if self.rect.colliderect(other.rect):
-                    other.health -= 10
+            self.is_hitting = True
+            self.hit_frame = 0
+            self.last_hit_time = current_time
+            if dx > 0:
+                self.rect.x += 10
+            else:
+                self.rect.x -= 10
+            if self.rect.colliderect(other.rect):
+                other.health -= 15
         self.rect.x = max(0, min(self.rect.x, SCREEN_WIDTH - self.rect.width))
         floor_level = SCREEN_HEIGHT - 100
         if self.rect.bottom >= floor_level:
@@ -416,7 +546,7 @@ def show_loading_screen(progress, total):
 
 
 def load_all_assets():
-    total_load_steps = 800
+    total_load_steps = 1000
     current_progress = 0
     show_loading_screen(current_progress, total_load_steps)
 
@@ -440,7 +570,7 @@ def load_all_assets():
     current_progress += 31
     show_loading_screen(current_progress, total_load_steps)
 
-    pepe_jump = create_pepe_animation("pepe_run", 30, "бег пепе")
+    pepe_jump = create_pepe_animation("jump_pepe", 29, "пепе пепе")
     current_progress += 30
     show_loading_screen(current_progress, total_load_steps)
 
@@ -452,7 +582,6 @@ def load_all_assets():
     current_progress += 60
     show_loading_screen(current_progress, total_load_steps)
 
-    # Увеличенные анимации пуль (150x75)
     ton_bullet = load_bullet_animation("ton coin", 155, "ton coin", 150, 75, GRAY)
     current_progress += 155
     show_loading_screen(current_progress, total_load_steps)
@@ -477,7 +606,6 @@ def load_all_assets():
     current_progress += 1
     show_loading_screen(current_progress, total_load_steps)
 
-    # Загрузка glow-анимаций
     left_glow = create_pepe_animation("свечение_левое", 41, "Left glow", 1920, 1080)
     current_progress += 41
     show_loading_screen(current_progress, total_load_steps)
@@ -486,7 +614,6 @@ def load_all_assets():
     current_progress += 41
     show_loading_screen(current_progress, total_load_steps)
 
-    # Загрузка matrix-анимаций
     matrix_durov = create_pepe_animation(
         "matrix_durov", 55, "Holomatrix Durov", 350, 350
     )
@@ -501,22 +628,22 @@ def load_all_assets():
     current_progress += 1
     show_loading_screen(current_progress, total_load_steps)
 
-    # Загрузка XP баров (рамок для HP-бара) из папки XP bars.
-    xp_left_durov = load_image_with_fallback("XP bars/левый_дуров.png", 400, 100, GRAY)
+    # Изменяем размер XP bars, чтобы они учитывали смещение – высота теперь 125 пикселей
+    xp_left_durov = load_image_with_fallback("XP bars/левый_дуров.png", 300, 125, GRAY)
     current_progress += 1
     show_loading_screen(current_progress, total_load_steps)
 
     xp_right_durov = load_image_with_fallback(
-        "XP bars/правый_дуров.png", 400, 100, GRAY
+        "XP bars/правый_дуров.png", 300, 125, GRAY
     )
     current_progress += 1
     show_loading_screen(current_progress, total_load_steps)
 
-    xp_left_pepe = load_image_with_fallback("XP bars/левый_пепе.png", 400, 100, GRAY)
+    xp_left_pepe = load_image_with_fallback("XP bars/левый_пепе.png", 300, 125, GRAY)
     current_progress += 1
     show_loading_screen(current_progress, total_load_steps)
 
-    xp_right_pepe = load_image_with_fallback("XP bars/правый_пепе.png", 400, 100, GRAY)
+    xp_right_pepe = load_image_with_fallback("XP bars/правый_пепе.png", 300, 125, GRAY)
     current_progress += 1
     show_loading_screen(current_progress, total_load_steps)
 
@@ -590,105 +717,7 @@ def shop_screen():
         clock.tick(FPS)
 
 
-class AIPlayerLocal(Player):
-    def inputer(
-        self, other, keys, controls, bullets_group, bullet_animation_frames, bullet_type
-    ):
-        # "Умный" AI: анализ расстояния до противника, корректировка дистанции,
-        # выбор действий (движение, прыжок, стрельба, удар).
-        self.is_moving = False
-        current_time = time.time()
-        dx = other.rect.centerx - self.rect.centerx
-        distance = abs(dx)
-
-        # Оптимальные границы дистанции (в пикселях)
-        optimal_min = 200
-        optimal_max = 400
-        move_speed = self.speed
-
-        # Если противник слишком далеко – приближаемся
-        if distance > optimal_max:
-            if dx > 0:
-                self.rect.x += move_speed
-                if not self.facing_right:
-                    self.facing_right = True
-                    self.flip_images()
-            else:
-                self.rect.x -= move_speed
-                if self.facing_right:
-                    self.facing_right = False
-                    self.flip_images()
-            self.is_moving = True
-
-        # Если противник слишком близко – отступаем
-        elif distance < optimal_min:
-            if dx > 0:
-                self.rect.x -= move_speed
-                if self.facing_right:
-                    self.facing_right = False
-                    self.flip_images()
-            else:
-                self.rect.x += move_speed
-                if not self.facing_right:
-                    self.facing_right = True
-                    self.flip_images()
-            self.is_moving = True
-
-        # Если дистанция в оптимальном диапазоне – небольшое случайное движение
-        else:
-            if random.random() < 0.1:
-                step = random.choice([-move_speed, move_speed])
-                self.rect.x += step
-                self.is_moving = True
-                if step > 0 and not self.facing_right:
-                    self.facing_right = True
-                    self.flip_images()
-                elif step < 0 and self.facing_right:
-                    self.facing_right = False
-                    self.flip_images()
-
-        # Периодический прыжок, если на земле
-        if self.on_ground and random.random() < 0.02:
-            self.dy = self.jump_speed
-            self.on_ground = False
-            self.is_jumping = True
-
-        # Если противник в оптимальном диапазоне – стреляем
-        shoot_cooldown = 0.5
-        if (
-            optimal_min <= distance <= optimal_max
-            and (current_time - self.last_shot_time) > shoot_cooldown
-        ):
-            self.last_shot_time = current_time
-            # Направление для пули определяется относительно позиции противника
-            direction = 1 if self.rect.x < other.rect.x else -1
-            for i in range(3):
-                bullet = Bullet(
-                    self.rect.centerx,
-                    self.rect.centery - 10 + i * 10,
-                    direction,
-                    self,
-                    bullet_animation_frames,
-                    bullet_type,
-                )
-                bullets_group.add(bullet)
-
-        # Если очень близко – выполняем удар (хит)
-        hit_cooldown = 0.5
-        if distance < 100 and (current_time - self.last_hit_time) > hit_cooldown:
-            self.is_hitting = True
-            self.hit_frame = 0
-            self.last_hit_time = current_time
-            # Небольшое движение для симуляции удара
-            if dx > 0:
-                self.rect.x += 10
-            else:
-                self.rect.x -= 10
-            if self.rect.colliderect(other.rect):
-                other.health -= 15
-
-
-def main_game(player1_choice, player2_choice, assets):
+def main_game(player1_choice, player2_choice, assets, player_logins):
     score1 = 0
     score2 = 0
     round_number = 0
@@ -817,7 +846,6 @@ def main_game(player1_choice, player2_choice, assets):
                 is_pepe=p2_is_pepe,
             )
 
-        # Присваиваем XP рамки (окоемки) для HP-бара:
         if p1_is_pepe:
             player1.xp_frame = assets["xp_left_pepe"]
         else:
@@ -906,11 +934,17 @@ def main_game(player1_choice, player2_choice, assets):
             all_sprites.draw(screen)
             bullets.draw(screen)
 
-            # Изменённое позиционирование HP-баров:
-            # Для персонажа 1 – отступ от левого края 100 пикселей (x=100)
-            player1.draw_health_bar(screen, 100, 40)
-            # Для персонажа 2 – отступ от правого края 100 пикселей (x = SCREEN_WIDTH - 300 - 100 = SCREEN_WIDTH - 400)
-            player2.draw_health_bar(screen, SCREEN_WIDTH - 400, 40)
+            # Отрисовка HP-полос и XP-баров. HP-полоса рисуется с координатой y = 40 (на 30 пикселей ниже предыдущей позиции)
+            player1.draw_health_bar(screen, 55, 40)
+            player2.draw_health_bar(screen, SCREEN_WIDTH - 355, 40)
+
+            login_font = pygame.font.SysFont(None, 36)
+            p1_login_text = login_font.render(player_logins["player1"], True, WHITE)
+            p2_login_text = login_font.render(player_logins["player2"], True, WHITE)
+            screen.blit(p1_login_text, (10, 10))
+            screen.blit(
+                p2_login_text, (SCREEN_WIDTH - p2_login_text.get_width() - 10, 10)
+            )
 
             pygame.display.flip()
             clock.tick(FPS)
@@ -945,8 +979,10 @@ def main_game(player1_choice, player2_choice, assets):
 
     if score1 > score2:
         final_text = "Player 1 WINS the match!"
+        update_stats(player_logins["player1"], player_logins["player2"])
     elif score2 > score1:
         final_text = "Player 2 WINS the match!"
+        update_stats(player_logins["player2"], player_logins["player1"])
     else:
         final_text = "MATCH DRAW!"
     final_surf = pygame.font.SysFont(None, 74).render(final_text, True, YELLOW)
@@ -959,8 +995,7 @@ def main_game(player1_choice, player2_choice, assets):
     pygame.time.wait(3000)
 
 
-def main_menu(assets):
-
+def main_menu(assets, player_logins):
     if "left_glow" not in assets:
         assets["left_glow"] = create_pepe_animation(
             "свечение_левое", 41, "Left glow", 1920, 1080
@@ -998,9 +1033,8 @@ def main_menu(assets):
     font_label = pygame.font.SysFont(None, 36)
 
     shop_button = Button(pygame.Rect(20, 20, 150, 50), BLUE, "Shop")
-    # Изменено: увеличиваем кнопку "Start Game" по вертикали (высота с 100 до 200), ширина (300) остаётся неизменной.
     start_button = Button(
-        pygame.Rect(SCREEN_WIDTH // 2 - 150, SCREEN_HEIGHT - 100, 500, 150),
+        pygame.Rect(SCREEN_WIDTH // 2 - 180, SCREEN_HEIGHT - 200, 500, 150),
         GREEN,
         "Start Game",
         no_background=True,
@@ -1010,7 +1044,6 @@ def main_menu(assets):
     player1_index = 0
     player2_index = 0
 
-    # Определяем прямоугольники превью для игроков.
     preview_rect1 = pygame.Rect(325, 600, 350, 350)
     preview_rect2 = pygame.Rect(SCREEN_WIDTH - 525, 600, 350, 350)
 
@@ -1055,17 +1088,17 @@ def main_menu(assets):
         else:
             screen.fill(WHITE)
 
-        # Отрисовка превью для Player 1 (без зеркалирования)
         if options[player1_index] == "ai":
             ai_img_scaled = pygame.transform.scale(
                 ai_image, (preview_rect1.width, preview_rect1.height)
             )
             screen.blit(ai_img_scaled, preview_rect1.topleft)
         else:
-            if options[player1_index] == "durov":
-                matrix_frames = assets["matrix_durov"]
-            else:
-                matrix_frames = assets["matrix_pepe"]
+            matrix_frames = (
+                assets["matrix_durov"]
+                if options[player1_index] == "durov"
+                else assets["matrix_pepe"]
+            )
             frame_index = int(
                 ((time.time() - left_matrix_time) * 10) % len(matrix_frames)
             )
@@ -1074,22 +1107,20 @@ def main_menu(assets):
             )
             screen.blit(scaled_matrix, preview_rect1.topleft)
 
-        # Отрисовка превью для Player 2:
-        # Если выбран вариант "ai" – отрисовываем без изменений, иначе зеркалим матричную анимацию.
         if options[player2_index] == "ai":
             ai_img_scaled = pygame.transform.scale(
                 ai_image, (preview_rect2.width, preview_rect2.height)
             )
             screen.blit(ai_img_scaled, preview_rect2.topleft)
         else:
-            if options[player2_index] == "durov":
-                matrix_frames = assets["matrix_durov"]
-            else:
-                matrix_frames = assets["matrix_pepe"]
+            matrix_frames = (
+                assets["matrix_durov"]
+                if options[player2_index] == "durov"
+                else assets["matrix_pepe"]
+            )
             frame_index = int(
                 ((time.time() - right_matrix_time) * 10) % len(matrix_frames)
             )
-            # Зеркалим выбранный кадр по горизонтали:
             frame = matrix_frames[frame_index]
             flipped_frame = pygame.transform.flip(frame, True, False)
             scaled_matrix = pygame.transform.scale(
@@ -1139,6 +1170,20 @@ def main_menu(assets):
         )
         screen.blit(scaled_anim_frame, start_button.rect.topleft)
 
+        login_font = pygame.font.SysFont(None, 36)
+        p1_login_text = login_font.render(player_logins["player1"], True, WHITE)
+        p2_login_text = login_font.render(player_logins["player2"], True, WHITE)
+        screen.blit(
+            p1_login_text, (10, SCREEN_HEIGHT - p1_login_text.get_height() - 10)
+        )
+        screen.blit(
+            p2_login_text,
+            (
+                SCREEN_WIDTH - p2_login_text.get_width() - 10,
+                SCREEN_HEIGHT - p2_login_text.get_height() - 10,
+            ),
+        )
+
         for event in pygame.event.get():
             if event.type == QUIT:
                 cap_lobby.release()
@@ -1170,7 +1215,7 @@ def main_menu(assets):
                     player1_choice = options[player1_index]
                     player2_choice = options[player2_index]
                     cap_lobby.release()
-                    main_game(player1_choice, player2_choice, assets)
+                    main_game(player1_choice, player2_choice, assets, player_logins)
                     assets["video_lobby"] = cv2.VideoCapture("лобби.mp4")
                     cap_lobby = assets["video_lobby"]
                     start_game_anim_start = time.time()
@@ -1180,8 +1225,23 @@ def main_menu(assets):
 
 
 def main():
-    assets = load_all_assets()
-    main_menu(assets)
+    init_db()
+
+    assets_holder = {}
+
+    def load_assets_thread():
+        assets_holder["assets"] = load_all_assets()
+
+    asset_thread = threading.Thread(target=load_assets_thread)
+    asset_thread.start()
+
+    player1_login, player2_login = get_passwords_for_players()
+    player_logins = {"player1": player1_login, "player2": player2_login}
+
+    asset_thread.join()
+    assets = assets_holder["assets"]
+
+    main_menu(assets, player_logins)
 
 
 if __name__ == "__main__":
