@@ -11,7 +11,6 @@ import threading
 import tkinter as tk
 from tkinter import messagebox
 
-# from network import NetworkClient  # если используется, раскомментируйте
 
 pygame.init()
 SCREEN_WIDTH = 1920
@@ -32,25 +31,15 @@ pygame.display.set_caption("Dmitriy Combat 2D")
 clock = pygame.time.Clock()
 
 
-# Вспомогательная функция для создания шрифта из файла "MKX Title.ttf" для текста Pygame
 def get_font(size):
     return pygame.font.Font("MKX Title.ttf", size)
 
 
-#############################################
-# SQL-интеграция и функции аутентификации  #
-#############################################
-
-
 def hash_password(password):
-    """Возвращает SHA256-хэш от переданного пароля."""
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 
 def init_db():
-    """
-    Открывает базу данных players.db и создаёт таблицу users, если её ещё нет.
-    """
     conn = sqlite3.connect("players.db")
     cursor = conn.cursor()
     cursor.execute(
@@ -69,7 +58,6 @@ def init_db():
 
 
 def register_user(login, password):
-    """Регистрирует нового пользователя, если логин ещё не занят."""
     hashed = hash_password(password)
     conn = sqlite3.connect("players.db")
     cursor = conn.cursor()
@@ -83,11 +71,10 @@ def register_user(login, password):
     )
     conn.commit()
     conn.close()
-    return True, "Registration successful!"
+    return True, "Reg successful!"
 
 
 def login_user(login, password):
-    """Проверяет корректность введённых логина и пароля."""
     hashed = hash_password(password)
     conn = sqlite3.connect("players.db")
     cursor = conn.cursor()
@@ -99,14 +86,10 @@ def login_user(login, password):
     if user:
         return True, "Login successful!"
     else:
-        return False, "Invalid credentials!"
+        return False, "Invalid"
 
 
 def update_stats(winner_login, loser_login):
-    """
-    Обновляет статистику в базе данных:
-    увеличивает количество побед у победителя и поражений у проигравшего.
-    """
     conn = sqlite3.connect("players.db")
     cursor = conn.cursor()
     cursor.execute("UPDATE users SET win = win + 1 WHERE login = ?", (winner_login,))
@@ -116,23 +99,15 @@ def update_stats(winner_login, loser_login):
 
 
 def get_passwords_for_players():
-    """
-    Открывает окна аутентификации для двух игроков.
-    Для этих окон не используется кастомный шрифт (MKX Title.ttf),
-    применяется системный шрифт по умолчанию.
-    Изменения: каждое окно масштабируется до размера 600x400 (примерно 1.5 раза больше).
-    """
     creds = {}
     root = tk.Tk()
     root.title("Authentication")
-    root.withdraw()  # скрываем главное окно
+    root.withdraw()
 
     def create_window(player_number):
         win = tk.Toplevel(root)
         win.title(f"Player {player_number} Authentication")
-        # Увеличиваем окно до размера 600x400
         win.geometry("250x300")
-        # Здесь для виджетов используется системный шрифт по умолчанию
         tk.Label(win, text=f"Player {player_number} Authentication").pack(pady=10)
         mode_var = tk.StringVar(value="login")
         tk.Radiobutton(win, text="Login", variable=mode_var, value="login").pack()
@@ -184,11 +159,6 @@ def get_frame_surface(cap, w, h):
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     frame = cv2.resize(frame, (w, h))
     return pygame.surfarray.make_surface(np.transpose(frame, (1, 0, 2)))
-
-
-#############################################
-# Классы и функции для игры                #
-#############################################
 
 
 class Button:
@@ -333,7 +303,7 @@ class Player(pygame.sprite.Sprite):
             self.on_ground = False
             self.is_jumping = True
         current_time = time.time()
-        if keys[controls["shoot"]] and current_time - self.last_shot_time > 1:
+        if keys[controls["shoot"]] and current_time - self.last_shot_time > 0.35:
             self.last_shot_time = current_time
             direction = 1 if self.rect.x < other.rect.x else -1
             for i in range(3):
@@ -406,7 +376,6 @@ class Player(pygame.sprite.Sprite):
             frame_w = frame.get_width()
             frame_h = frame.get_height()
             new_x = x - (frame_w - bar_width) // 2
-            # Смещаем XP-бар на 30 пикселей вниз (относительно позиции HP-полосы)
             new_y = y - (frame_h - bar_height) // 2 + 40
             screen.blit(frame, (new_x, new_y))
 
@@ -886,8 +855,10 @@ def main_game(player1_choice, player2_choice, assets, player_logins):
 
             elapsed = time.time() - round_start_time
             remaining = round_duration - elapsed
-            info_text = f"Time: {int(remaining)}   Score: P1 {score1} - {score2} P2   Round: {round_number}"
-            info_surf = get_font(50).render(info_text, True, YELLOW)
+            info_text = (
+                f"Time: {int(remaining)}   {score1} - {score2}   Round: {round_number}"
+            )
+            info_surf = get_font(50).render(info_text, True, WHITE)
             info_rect = info_surf.get_rect(center=(SCREEN_WIDTH // 2, 50))
             screen.blit(info_surf, info_rect)
 
@@ -980,7 +951,7 @@ def main_game(player1_choice, player2_choice, assets, player_logins):
                 round_winner = "Draw"
 
         result_text = f"Round {round_number} Result: {round_winner}"
-        result_surf = get_font(74).render(result_text, True, YELLOW)
+        result_surf = get_font(74).render(result_text, True, WHITE)
         result_rect = result_surf.get_rect(
             center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
         )
@@ -999,7 +970,7 @@ def main_game(player1_choice, player2_choice, assets, player_logins):
         update_stats(player_logins["player2"], player_logins["player1"])
     else:
         final_text = "MATCH DRAW!"
-    final_surf = get_font(74).render(final_text, True, YELLOW)
+    final_surf = get_font(74).render(final_text, True, WHITE)
     final_rect = final_surf.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
     overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
     overlay.fill((0, 0, 0, 180))
@@ -1184,19 +1155,16 @@ def main_menu(assets, player_logins):
         )
         screen.blit(scaled_anim_frame, start_button.rect.topleft)
 
+        # Отрисовка логинов над превью персонажей
         login_font = get_font(36)
         p1_login_text = login_font.render(player_logins["player1"], True, WHITE)
         p2_login_text = login_font.render(player_logins["player2"], True, WHITE)
-        screen.blit(
-            p1_login_text, (10, SCREEN_HEIGHT - p1_login_text.get_height() - 10)
-        )
-        screen.blit(
-            p2_login_text,
-            (
-                SCREEN_WIDTH - p2_login_text.get_width() - 10,
-                SCREEN_HEIGHT - p2_login_text.get_height() - 10,
-            ),
-        )
+        p1_text_x = preview_rect1.centerx - p1_login_text.get_width() // 2
+        p1_text_y = preview_rect1.y - p1_login_text.get_height() - 5
+        p2_text_x = preview_rect2.centerx - p2_login_text.get_width() // 2
+        p2_text_y = preview_rect2.y - p2_login_text.get_height() - 5
+        screen.blit(p1_login_text, (p1_text_x, p1_text_y))
+        screen.blit(p2_login_text, (p2_text_x, p2_text_y))
 
         for event in pygame.event.get():
             if event.type == QUIT:
